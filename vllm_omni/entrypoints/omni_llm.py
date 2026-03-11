@@ -156,23 +156,39 @@ class OmniLLM(LLM):
         )
 
         # Create the Engine (autoselects V0 vs V1)
+        logger.info("[OmniLLM] Creating LLMEngine.from_engine_args for model=%s", model)
         self.llm_engine = LLMEngine.from_engine_args(engine_args=engine_args, usage_context=UsageContext.LLM_CLASS)
+        logger.info("[OmniLLM] LLMEngine created successfully")
         self.llm_engine.output_processor = MultimodalOutputProcessor(
             tokenizer=self.llm_engine.tokenizer,
             log_stats=self.llm_engine.log_stats,
             engine_core_output_type=engine_args.engine_output_type,
         )
-        self.llm_engine.input_processor = OmniInputProcessor(vllm_config=self.llm_engine.vllm_config)
+        logger.info("[OmniLLM] Output processor initialized")
+
+        # Constructing OmniInputProcessor can block stage startup for text-only
+        # BAGEL thinker runs on XPU. Keep default vLLM input processor for
+        # text-output stages and only use OmniInputProcessor for non-text stages.
+        if engine_args.engine_output_type == "text":
+            logger.info("[OmniLLM] Using default vLLM input processor for text-output stage")
+        else:
+            self.llm_engine.input_processor = OmniInputProcessor(vllm_config=self.llm_engine.vllm_config)
+            logger.info("[OmniLLM] Input processor initialized")
         self.engine_class = type(self.llm_engine)
 
         self.request_counter = Counter()
         self.default_sampling_params: dict[str, Any] | None = None
 
+        logger.info("[OmniLLM] Querying supported tasks")
         supported_tasks = self.llm_engine.get_supported_tasks()  # type: ignore
+        logger.info("[OmniLLM] Supported tasks query completed")
 
         logger.info("Supported_tasks: %s", supported_tasks)
 
         self.supported_tasks = supported_tasks
+
+        # Keep parity with base vLLM LLM API usage paths.
+        self.renderer = self.llm_engine.renderer
 
         # Load the Input/Output processor plugin if any
         io_processor_plugin = self.llm_engine.model_config.io_processor_plugin

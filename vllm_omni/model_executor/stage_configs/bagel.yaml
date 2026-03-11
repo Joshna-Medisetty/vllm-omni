@@ -11,16 +11,18 @@ stage_args:
       model_arch: BagelForConditionalGeneration
       worker_type: ar
       scheduler_cls: vllm_omni.core.sched.omni_ar_scheduler.OmniARScheduler
-      gpu_memory_utilization: 0.35
+      gpu_memory_utilization: 0.40
       enforce_eager: true
       trust_remote_code: true
       engine_output_type: text
-      distributed_executor_backend: "mp"
+      distributed_executor_backend: "uni"
       enable_prefix_caching: false
-      max_num_batched_tokens: 32768
+      skip_mm_profiling: true
+      max_model_len: 4096
+      max_num_batched_tokens: 4096
       tensor_parallel_size: 1
       omni_kv_config:
-        need_send_cache: true
+        need_send_cache: false
         kv_transfer_criteria:
           type: prefill_finished #or special token generated
     final_output: true
@@ -38,7 +40,7 @@ stage_args:
   - stage_id: 1
     stage_type: diffusion
     runtime:
-      devices: "0"
+      devices: "1"
       max_batch_size: 1
     engine_args:
       model_stage: dit
@@ -51,7 +53,7 @@ stage_args:
       max_num_batched_tokens: 32768
       tensor_parallel_size: 1
       omni_kv_config:
-        need_recv_cache: true
+        need_recv_cache: false
     engine_input_source: [0]
 
     final_output: true

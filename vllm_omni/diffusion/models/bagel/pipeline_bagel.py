@@ -721,4 +721,13 @@ class BagelPipeline(nn.Module):
             )
 
         loader = AutoWeightsLoader(self)
-        return loader.load_weights(_filtered_weights())
+        loaded_weights = loader.load_weights(_filtered_weights())
+
+        # Bagel keeps the same vision module under both `bagel.vit_model.*`
+        # and top-level `vit_model.*` references. The filtered loader writes
+        # through the Bagel path, while strict validation in DiffusersPipelineLoader
+        # checks top-level parameter names as well. Mark top-level aliases as
+        # covered to avoid false positives for intentionally unused ViT heads.
+        loaded_weights |= {f"vit_model.{name}" for name, _ in self.vit_model.named_parameters()}
+
+        return loaded_weights

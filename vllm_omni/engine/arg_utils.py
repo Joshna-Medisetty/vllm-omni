@@ -110,6 +110,7 @@ class OmniEngineArgs(EngineArgs):
         self._ensure_omni_models_registered()
 
         # Keep compatibility when async args are constructed from partial payloads.
+        language_model_only = getattr(self, "language_model_only", False)
         limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
         interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
@@ -123,6 +124,7 @@ class OmniEngineArgs(EngineArgs):
         mm_encoder_tp_mode = getattr(self, "mm_encoder_tp_mode", "weights")
         mm_encoder_attn_backend = getattr(self, "mm_encoder_attn_backend", None)
         video_pruning_rate = getattr(self, "video_pruning_rate", 0.0)
+        logits_processors = getattr(self, "logits_processors", None)
 
         # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
@@ -164,6 +166,7 @@ class OmniEngineArgs(EngineArgs):
             skip_tokenizer_init=self.skip_tokenizer_init,
             enable_prompt_embeds=self.enable_prompt_embeds,
             served_model_name=self.served_model_name,
+            language_model_only=language_model_only,
             limit_mm_per_prompt=limit_mm_per_prompt,
             enable_mm_embeds=enable_mm_embeds,
             interleave_mm_strings=interleave_mm_strings,
@@ -178,13 +181,12 @@ class OmniEngineArgs(EngineArgs):
             mm_encoder_tp_mode=mm_encoder_tp_mode,
             mm_encoder_attn_backend=mm_encoder_attn_backend,
             pooler_config=self.pooler_config,
-            logits_processor_pattern=self.logits_processor_pattern,
             generation_config=self.generation_config,
             override_generation_config=self.override_generation_config,
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
-            logits_processors=self.logits_processors,
+            logits_processors=logits_processors,
             video_pruning_rate=video_pruning_rate,
             io_processor_plugin=self.io_processor_plugin,
             # Omni-specific fields
@@ -267,6 +269,7 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         self._ensure_omni_models_registered()
 
         # Keep compatibility when async args are constructed from partial payloads.
+        language_model_only = getattr(self, "language_model_only", False)
         limit_mm_per_prompt = getattr(self, "limit_mm_per_prompt", {})
         enable_mm_embeds = getattr(self, "enable_mm_embeds", False)
         interleave_mm_strings = getattr(self, "interleave_mm_strings", False)
@@ -280,6 +283,7 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
         mm_encoder_tp_mode = getattr(self, "mm_encoder_tp_mode", "weights")
         mm_encoder_attn_backend = getattr(self, "mm_encoder_attn_backend", None)
         video_pruning_rate = getattr(self, "video_pruning_rate", 0.0)
+        logits_processors = getattr(self, "logits_processors", None)
 
         # Build stage_connector_config from stage_connector_spec
         stage_connector_config = {
@@ -321,6 +325,7 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
             skip_tokenizer_init=self.skip_tokenizer_init,
             enable_prompt_embeds=self.enable_prompt_embeds,
             served_model_name=self.served_model_name,
+            language_model_only=language_model_only,
             limit_mm_per_prompt=limit_mm_per_prompt,
             enable_mm_embeds=enable_mm_embeds,
             interleave_mm_strings=interleave_mm_strings,
@@ -335,13 +340,12 @@ class AsyncOmniEngineArgs(AsyncEngineArgs):
             mm_encoder_tp_mode=mm_encoder_tp_mode,
             mm_encoder_attn_backend=mm_encoder_attn_backend,
             pooler_config=self.pooler_config,
-            logits_processor_pattern=self.logits_processor_pattern,
             generation_config=self.generation_config,
             override_generation_config=self.override_generation_config,
             enable_sleep_mode=self.enable_sleep_mode,
             model_impl=self.model_impl,
             override_attention_dtype=self.override_attention_dtype,
-            logits_processors=self.logits_processors,
+            logits_processors=logits_processors,
             video_pruning_rate=video_pruning_rate,
             io_processor_plugin=self.io_processor_plugin,
             # Omni-specific fields
