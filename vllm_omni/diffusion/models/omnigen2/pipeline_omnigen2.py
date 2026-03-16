@@ -27,6 +27,7 @@ from diffusers.utils import BaseOutput
 from diffusers.utils.torch_utils import randn_tensor
 from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
 from vllm.model_executor.models.utils import AutoWeightsLoader
+from vllm.transformers_utils.config import get_hf_file_to_dict
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
@@ -673,13 +674,11 @@ class OmniGen2Pipeline(nn.Module):
             self.device
         )
 
-        transformer_config_path = os.path.join(model, "transformer", "config.json")
+        transformer_config = get_hf_file_to_dict(
+            "transformer/config.json", model, revision=getattr(od_config, "revision", None)
+        )
         transformer_kwargs = {}
-
-        if os.path.exists(transformer_config_path):
-            with open(transformer_config_path) as f:
-                transformer_config = json.load(f)
-
+        if isinstance(transformer_config, dict):
             param_mapping = {
                 "patch_size": "patch_size",
                 "in_channels": "in_channels",
@@ -697,7 +696,6 @@ class OmniGen2Pipeline(nn.Module):
                 "text_feat_dim": "text_feat_dim",
                 "timestep_scale": "timestep_scale",
             }
-
             for config_key, param_name in param_mapping.items():
                 if config_key in transformer_config:
                     value = transformer_config[config_key]
