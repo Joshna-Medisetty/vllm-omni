@@ -91,8 +91,7 @@ class OmniDiffusion:
             if model_type == "bagel" or "BagelForConditionalGeneration" in architectures:
                 pipeline_class = "BagelPipeline"
             elif model_type == "nextstep":
-                if od_config.model_class_name is None:
-                    pipeline_class = "NextStep11Pipeline"
+                pipeline_class = "NextStep11Pipeline"
             elif model_type == "glm-image" or "GlmImageForConditionalGeneration" in architectures:
                 pipeline_class = "GlmImagePipeline"
             elif architectures and len(architectures) == 1:
