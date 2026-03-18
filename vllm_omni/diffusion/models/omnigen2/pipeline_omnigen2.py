@@ -27,7 +27,6 @@ from diffusers.utils import BaseOutput
 from diffusers.utils.torch_utils import randn_tensor
 from transformers import Qwen2_5_VLForConditionalGeneration, Qwen2_5_VLProcessor
 from vllm.model_executor.models.utils import AutoWeightsLoader
-from vllm.transformers_utils.config import get_hf_file_to_dict
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
 from vllm_omni.diffusion.distributed.utils import get_local_device
@@ -674,38 +673,36 @@ class OmniGen2Pipeline(nn.Module):
             self.device
         )
 
-        transformer_config = get_hf_file_to_dict(
-            "transformer/config.json", model, revision=getattr(od_config, "revision", None)
-        )
+        # Transformer config is loaded at entrypoint into od_config.tf_model_config.params.
+        transformer_config = od_config.tf_model_config.params
         transformer_kwargs = {}
-        if isinstance(transformer_config, dict):
-            param_mapping = {
-                "patch_size": "patch_size",
-                "in_channels": "in_channels",
-                "out_channels": "out_channels",
-                "hidden_size": "hidden_size",
-                "num_layers": "num_layers",
-                "num_refiner_layers": "num_refiner_layers",
-                "num_attention_heads": "num_attention_heads",
-                "num_kv_heads": "num_kv_heads",
-                "multiple_of": "multiple_of",
-                "ffn_dim_multiplier": "ffn_dim_multiplier",
-                "norm_eps": "norm_eps",
-                "axes_dim_rope": "axes_dim_rope",
-                "axes_lens": "axes_lens",
-                "text_feat_dim": "text_feat_dim",
-                "timestep_scale": "timestep_scale",
-            }
-            for config_key, param_name in param_mapping.items():
-                if config_key in transformer_config:
-                    value = transformer_config[config_key]
-                    # Handle tuple parameters (axes_dim_rope, axes_lens)
-                    if isinstance(value, list) and param_name in (
-                        "axes_dim_rope",
-                        "axes_lens",
-                    ):
-                        value = tuple(value)
-                    transformer_kwargs[param_name] = value
+        param_mapping = {
+            "patch_size": "patch_size",
+            "in_channels": "in_channels",
+            "out_channels": "out_channels",
+            "hidden_size": "hidden_size",
+            "num_layers": "num_layers",
+            "num_refiner_layers": "num_refiner_layers",
+            "num_attention_heads": "num_attention_heads",
+            "num_kv_heads": "num_kv_heads",
+            "multiple_of": "multiple_of",
+            "ffn_dim_multiplier": "ffn_dim_multiplier",
+            "norm_eps": "norm_eps",
+            "axes_dim_rope": "axes_dim_rope",
+            "axes_lens": "axes_lens",
+            "text_feat_dim": "text_feat_dim",
+            "timestep_scale": "timestep_scale",
+        }
+        for config_key, param_name in param_mapping.items():
+            if config_key in transformer_config:
+                value = transformer_config[config_key]
+                # Handle tuple parameters (axes_dim_rope, axes_lens)
+                if isinstance(value, list) and param_name in (
+                    "axes_dim_rope",
+                    "axes_lens",
+                ):
+                    value = tuple(value)
+                transformer_kwargs[param_name] = value
         self.transformer = OmniGen2Transformer2DModel(**transformer_kwargs)
         self.mllm = Qwen2_5_VLForConditionalGeneration.from_pretrained(
             model, subfolder="mllm", local_files_only=local_files_only
