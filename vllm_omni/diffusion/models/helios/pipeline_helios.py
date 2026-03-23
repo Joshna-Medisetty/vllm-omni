@@ -29,6 +29,7 @@ from vllm_omni.diffusion.models.helios.scheduling_helios import HeliosScheduler
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.mem_trace import log_diffusion_device_memory
 from vllm_omni.platforms import current_omni_platform
 
 logger = logging.getLogger(__name__)
@@ -369,6 +370,12 @@ class HeliosPipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPip
                 negative_prompt_embeds = negative_prompt_embeds.to(device=device, dtype=dtype)
 
         batch_size = prompt_embeds.shape[0]
+        log_diffusion_device_memory(
+            logger,
+            device,
+            "forward_after_prompt_embeds",
+            extra=f"batch_size={batch_size} prompt_embeds_shape={tuple(prompt_embeds.shape)}",
+        )
 
         history_sizes = sorted(history_sizes, reverse=True)
 
@@ -683,6 +690,15 @@ class HeliosPipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPip
             for i, t in enumerate(timesteps):
                 self._current_timestep = t
                 timestep = t.expand(batch_size)
+                log_diffusion_device_memory(
+                    logger,
+                    latents.device,
+                    f"stage1_step_{i}_pre_transformer",
+                    extra=(
+                        f"do_true_cfg={do_true_cfg} latents_shape={tuple(latents.shape)} "
+                        f"prompt_embeds_numel={prompt_embeds.numel()}"
+                    ),
+                )
 
                 transformer_kwargs = {
                     "hidden_states": latents.to(transformer_dtype),
@@ -834,6 +850,15 @@ class HeliosPipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, DiffusionPip
                 for idx, t in enumerate(timesteps):
                     self._current_timestep = t
                     timestep = t.expand(latents.shape[0]).to(torch.int64)
+                    log_diffusion_device_memory(
+                        logger,
+                        latents.device,
+                        f"stage2_pyramid_{i_s}_step_{idx}_pre_transformer",
+                        extra=(
+                            f"do_true_cfg={do_true_cfg} latents_shape={tuple(latents.shape)} "
+                            f"prompt_embeds_numel={prompt_embeds.numel()}"
+                        ),
+                    )
 
                     transformer_kwargs = {
                         "hidden_states": latents.to(transformer_dtype),

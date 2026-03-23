@@ -42,11 +42,17 @@ Usage (Helios-Distilled, Stage 2 pyramid + DMD):
         --is-enable-stage2 \
         --pyramid-num-inference-steps-list 2 2 2 \
         --is-amplify-first-chunk
+
+Profiling:
+    python end2end.py ... --diffusion-mem-trace
+    python end2end.py ... --torch-profiler --torch-profiler-dir ./profiles
 """
 
 import argparse
+import os
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
@@ -178,6 +184,28 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable diffusion pipeline profiler to display stage durations.",
     )
+    parser.add_argument(
+        "--diffusion-mem-trace",
+        action="store_true",
+        help="Log XPU/CUDA memory at denoise steps (sets VLLM_OMNI_DIFFUSION_MEM_TRACE).",
+    )
+    parser.add_argument(
+        "--torch-profiler",
+        action="store_true",
+        help="Record PyTorch profiler trace during generate(); use small res/steps first.",
+    )
+    parser.add_argument(
+        "--torch-profiler-dir",
+        type=str,
+        default=None,
+        help="Trace output dir (default: VLLM_TORCH_PROFILER_DIR or ./profiles).",
+    )
+    parser.add_argument(
+        "--torch-profiler-trace-name",
+        type=str,
+        default=None,
+        help="Base trace filename (default: helios_<timestamp>).",
+    )
 
     # Memory & parallelism
     parser.add_argument("--vae-use-slicing", action="store_true", help="Enable VAE slicing.")
@@ -189,12 +217,41 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--ring-degree", type=int, default=1, help="Ring SP degree.")
     parser.add_argument("--cfg-parallel-size", type=int, default=1, choices=[1, 2], help="CFG parallel size.")
     parser.add_argument("--tensor-parallel-size", type=int, default=1, help="Tensor parallelism size.")
+    parser.add_argument(
+        "--quantization",
+        type=str,
+        default=None,
+        choices=["fp8", "int8", "gguf"],
+        help="DiT quantization (default: none / BF16).",
+    )
+    parser.add_argument(
+        "--gguf-model",
+        type=str,
+        default=None,
+        help="GGUF path or HF id when --quantization gguf.",
+    )
+    parser.add_argument(
+        "--ignored-layers",
+        type=str,
+        default=None,
+        help="Comma-separated layer name patterns to skip quantization.",
+    )
 
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    if args.diffusion_mem_trace:
+        os.environ["VLLM_OMNI_DIFFUSION_MEM_TRACE"] = "1"
+
+    torch_profiler_dir: str | None = None
+    if args.torch_profiler:
+        torch_profiler_dir = args.torch_profiler_dir or os.environ.get("VLLM_TORCH_PROFILER_DIR", "./profiles")
+        torch_profiler_dir = os.path.abspath(os.path.expanduser(torch_profiler_dir))
+        os.makedirs(torch_profiler_dir, exist_ok=True)
+        os.environ["VLLM_TORCH_PROFILER_DIR"] = torch_profiler_dir
+
     generator = torch.Generator(device=current_omni_platform.device_type).manual_seed(args.seed)
 
     parallel_config = DiffusionParallelConfig(
@@ -203,6 +260,25 @@ def main():
         cfg_parallel_size=args.cfg_parallel_size,
         tensor_parallel_size=args.tensor_parallel_size,
     )
+
+    quant_kwargs: dict[str, Any] = {}
+    ignored_layers = (
+        [s.strip() for s in args.ignored_layers.split(",") if s.strip()] if args.ignored_layers else None
+    )
+    if args.quantization == "gguf":
+        if not args.gguf_model:
+            raise ValueError("--gguf-model is required when --quantization gguf is set.")
+        quant_kwargs["quantization_config"] = {
+            "method": "gguf",
+            "gguf_model": args.gguf_model,
+        }
+    elif args.quantization and ignored_layers:
+        quant_kwargs["quantization_config"] = {
+            "method": args.quantization,
+            "ignored_layers": ignored_layers,
+        }
+    elif args.quantization:
+        quant_kwargs["quantization"] = args.quantization
 
     omni = Omni(
         model=args.model,
@@ -213,6 +289,7 @@ def main():
         parallel_config=parallel_config,
         enforce_eager=args.enforce_eager,
         enable_diffusion_pipeline_profiler=args.enable_diffusion_pipeline_profiler,
+        **quant_kwargs,
     )
 
     # Validate I2V / V2V arguments
@@ -265,24 +342,52 @@ def main():
         if args.use_cfg_zero_star:
             print(f"  CFG Zero Star: enabled (zero_init={args.use_zero_init}, zero_steps={args.zero_steps})")
         print("  Stage 2: disabled (Stage 1 only)")
+    print(f"  Quantization: {args.quantization if args.quantization else 'None (BF16)'}")
+    print(
+        f"  Profiling: mem_trace={args.diffusion_mem_trace} "
+        f"pipeline_profiler={args.enable_diffusion_pipeline_profiler} torch_profiler={args.torch_profiler}"
+    )
+    if args.torch_profiler and torch_profiler_dir is not None:
+        print(f"  Torch profiler dir: {torch_profiler_dir}")
     print(f"{'=' * 60}\n")
 
+    profiler_started = False
+    if args.torch_profiler:
+        assert torch_profiler_dir is not None
+        trace_base = args.torch_profiler_trace_name or f"helios_{int(time.time())}"
+        full_template = os.path.join(torch_profiler_dir, trace_base)
+        print(f"[Torch profiler] Starting capture → {full_template}_rank*.json(.gz)")
+        omni.engine.collective_rpc(method="start_profile", args=(full_template,), stage_ids=[0])
+        profiler_started = True
+
     generation_start = time.perf_counter()
-    frames = omni.generate(
-        {
-            "prompt": args.prompt,
-            "negative_prompt": args.negative_prompt,
-        },
-        OmniDiffusionSamplingParams(
-            height=args.height,
-            width=args.width,
-            generator=generator,
-            guidance_scale=args.guidance_scale,
-            num_inference_steps=args.num_inference_steps,
-            num_frames=args.num_frames,
-            extra_args=extra_args,
-        ),
-    )
+    try:
+        frames = omni.generate(
+            {
+                "prompt": args.prompt,
+                "negative_prompt": args.negative_prompt,
+            },
+            OmniDiffusionSamplingParams(
+                height=args.height,
+                width=args.width,
+                generator=generator,
+                guidance_scale=args.guidance_scale,
+                num_inference_steps=args.num_inference_steps,
+                num_frames=args.num_frames,
+                extra_args=extra_args,
+            ),
+        )
+    finally:
+        if profiler_started:
+            print("[Torch profiler] Stopping and exporting traces (may take a while)...")
+            profile_results = omni.engine.collective_rpc(method="stop_profile", timeout=600, stage_ids=[0])
+            if profile_results and isinstance(profile_results[0], dict):
+                traces = profile_results[0].get("traces") or []
+                for p in traces:
+                    print(f"[Torch profiler] Trace: {p}")
+            else:
+                print(f"[Torch profiler] Raw results: {profile_results}")
+
     generation_end = time.perf_counter()
     generation_time = generation_end - generation_start
 

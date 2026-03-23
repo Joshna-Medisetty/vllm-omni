@@ -31,6 +31,7 @@ from vllm_omni.diffusion.models.interface import supports_step_execution
 from vllm_omni.diffusion.offloader import get_offload_backend
 from vllm_omni.diffusion.registry import _NO_CACHE_ACCELERATION
 from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.utils.mem_trace import log_diffusion_device_memory
 from vllm_omni.diffusion.sched.interface import DiffusionSchedulerOutput
 from vllm_omni.diffusion.worker.utils import DiffusionRequestState, RunnerOutput
 from vllm_omni.distributed.omni_connectors.kv_transfer_manager import OmniKVTransferManager
@@ -271,8 +272,26 @@ class DiffusionModelRunner:
                 current_omni_platform.reset_peak_memory_stats()
 
             with set_forward_context(vllm_config=self.vllm_config, omni_diffusion_config=self.od_config):
+                log_diffusion_device_memory(logger, self.device, "pipeline_forward_start")
                 with record_function("pipeline_forward"):
-                    output = self.pipeline.forward(req)
+                    try:
+                        output = self.pipeline.forward(req)
+                    except Exception as exc:
+                        err = str(exc).lower()
+                        oom_like = (
+                            "out of memory" in err
+                            or "out_of_resources" in err
+                            or "outofmemory" in type(exc).__name__.lower()
+                        )
+                        if oom_like:
+                            log_diffusion_device_memory(
+                                logger,
+                                self.device,
+                                "pipeline_forward_oom",
+                                extra=f"exc_type={type(exc).__name__}",
+                            )
+                        raise
+                log_diffusion_device_memory(logger, self.device, "pipeline_forward_end")
 
             if is_primary:
                 self._record_peak_memory(output)

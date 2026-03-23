@@ -68,9 +68,15 @@ class TorchProfiler(ProfilerBase):
             except Exception as e:
                 logger.warning(f"[Rank {rank}] Failed to export trace: {e}")
 
-        # 4. Initialize profiler with long active period
+        activities: list = [ProfilerActivity.CPU]
+        if torch.cuda.is_available():
+            activities.append(ProfilerActivity.CUDA)
+        xpu_activity = getattr(ProfilerActivity, "XPU", None)
+        if xpu_activity is not None and getattr(torch, "xpu", None) is not None and torch.xpu.is_available():
+            activities.append(xpu_activity)
+
         cls._profiler = profile(
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            activities=activities,
             schedule=torch.profiler.schedule(
                 wait=0,
                 warmup=0,
