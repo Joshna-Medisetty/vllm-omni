@@ -17,7 +17,7 @@ from tests.utils import hardware_marks
 # L4: 4 GPUs + TP=4; XPU B60: 2 cards (use num_cards={"cuda": 4, "xpu": 4} if needed)
 FOUR_CARD_MARKS = hardware_marks(
     res={"cuda": "L4", "xpu": "B60"},
-    num_cards={"cuda": 4, "xpu": 2},
+    num_cards={"cuda": 2, "xpu": 2},
 )
 
 POSITIVE_PROMPT = "A small red barn in a snowy field, simple illustration."
@@ -58,9 +58,9 @@ def test_nextstep_11(omni_server: OmniServer, openai_client: OpenAIClientHandler
         "model": omni_server.model,
         "messages": messages,
         "extra_body": {
-            "height": 256,
-            "width": 256,
-            "num_inference_steps": 5,
+            "height": 512,
+            "width": 512,
+            "num_inference_steps": 10,
             "guidance_scale": 5.0,
             "guidance_scale_2": 1.0,
             "negative_prompt": NEGATIVE_PROMPT,
