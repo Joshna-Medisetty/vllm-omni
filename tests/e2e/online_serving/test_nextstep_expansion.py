@@ -27,14 +27,14 @@ _DEFAULT_MODEL = "stepfun-ai/NextStep-1.1"
 
 
 def _get_diffusion_feature_cases(model: str):
-    """Single online config: TP=2, explicit pipeline class."""
+    """Single online config: TP=4, explicit pipeline class."""
     return [
         pytest.param(
             OmniServerParams(
                 model=model,
                 server_args=[
                     "--tensor-parallel-size",
-                    "2",
+                    "4",
                     "--model-class-name",
                     "NextStep11Pipeline",
                 ],
