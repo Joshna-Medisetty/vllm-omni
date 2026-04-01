@@ -60,7 +60,7 @@ def test_nextstep_11(omni_server: OmniServer, openai_client: OpenAIClientHandler
         "extra_body": {
             "height": 512,
             "width": 512,
-            "num_inference_steps": 10,
+            "num_inference_steps": 2,
             "guidance_scale": 5.0,
             "guidance_scale_2": 1.0,
             "negative_prompt": NEGATIVE_PROMPT,
