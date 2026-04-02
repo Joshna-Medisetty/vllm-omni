@@ -723,6 +723,8 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         self.config = config
         args = from_nested_dict(AudioTokenizerArgs, self.config.audio_config["codec_args"])
         self.args = args
+        # Filled on first use after weights are placed (avoids per-call next(parameters) walks).
+        self._cached_param_device: torch.device | None = None
 
         if not args.causal:
             # causal mask is hard-coded in forward function
@@ -940,6 +942,11 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         emb = rearrange(emb, "b t d -> b d t")
         return emb
 
+    def _param_device(self) -> torch.device:
+        if self._cached_param_device is None:
+            self._cached_param_device = next(self.parameters()).device
+        return self._cached_param_device
+
     def _tokenize_audio(self, x: torch.Tensor) -> torch.Tensor:
         """Encode the given input tensor to quantized representation.
 
@@ -954,7 +961,10 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         if x.shape[-1] % self.patch_size != 0:
             pad_length = self.patch_size - (x.shape[-1] % self.patch_size)
             x = F.pad(x, (0, pad_length), mode="constant", value=0)
-        with torch.autocast(dtype=torch.bfloat16, device_type="cuda"):
+        with torch.autocast(
+            device_type=self._param_device().type,
+            dtype=torch.bfloat16,
+        ):
             # bf16 to use alibi bias in flash attn
             emb = self._forward_encoder(x)  # (b, d, t)
         codes = self.quantizer.encode(emb)  # (b, k, t)
@@ -1095,7 +1105,7 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         for i, chunk in enumerate(all_chunks):
             padded[i, : len(chunk)] = chunk
 
-        audio_codes = padded.to(device=torch.device("cuda"))  # [B, T, K]
+        audio_codes = padded.to(device=self._param_device())  # [B, T, K]
         audio_values = self.decode(audio_codes.transpose(1, 2), dtype=torch.bfloat16)  # [B, 1, T_out]
         audio_values = audio_values.detach().cpu().float().squeeze(1)  # [B, T_out]
         if torch.min(audio_values) < -1.0:
