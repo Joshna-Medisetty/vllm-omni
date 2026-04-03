@@ -1099,7 +1099,7 @@ class VoxtralTTSAudioTokenizer(nn.Module):
         for i, chunk in enumerate(all_chunks):
             padded[i, : len(chunk)] = chunk
 
-        audio_codes = padded.to(device=current_omni_platform.get_torch_device())  # [B, T, K]
+        audio_codes = padded.to(device=current_omni_platform.device_type)  # [B, T, K]
         audio_values = self.decode(audio_codes.transpose(1, 2), dtype=torch.bfloat16)  # [B, 1, T_out]
         audio_values = audio_values.detach().cpu().float().squeeze(1)  # [B, T_out]
         if torch.min(audio_values) < -1.0:
