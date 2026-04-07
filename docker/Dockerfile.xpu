@@ -28,10 +28,16 @@ RUN apt clean && apt-get update -y && \
     vim \
     python3.12 \
     python3.12-dev \
-    python3-pip
+    python3-pip \
+    ca-certificates \
+    ripgrep
 
 RUN apt update && apt upgrade -y && \
     apt install -y intel-oneapi-compiler-dpcpp-cpp-2025.3
+
+# Install Claude Code CLI
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    ~/.local/bin/claude --version
 
 # Install UMD with fixed version
 RUN mkdir neo && \
