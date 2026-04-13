@@ -68,7 +68,8 @@ start_claude_container() {
         -e NO_PROXY="${NO_PROXY}" \
         -e no_proxy="${no_proxy}" \
         -e HF_TOKEN="${HF_TOKEN}" \
-
+        -e HF_HOME=/root/.cache/huggingface \
+        -v /home/sdp/.cache/huggingface:/root/.cache/huggingface \
         -v /home/sdp/joshna/.claude:/root/.claude \
         -v /home/sdp/joshna/vllm:/workspace/vllm \
         -v /home/sdp/joshna/vllm-omni:/workspace/vllm-omni \
