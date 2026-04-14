@@ -34,7 +34,7 @@ def _get_diffusion_feature_cases(model: str):
                 model=model,
                 server_args=[
                     "--tensor-parallel-size",
-                    "4",
+                    "2",
                     "--model-class-name",
                     "NextStep11Pipeline",
                 ],
