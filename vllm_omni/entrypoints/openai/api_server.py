@@ -353,7 +353,8 @@ async def omni_run_server_worker(listen_address, sock, args, client_config=None,
     try:
         await shutdown_task
     finally:
-        serving_speech = getattr(getattr(app, "state", None), "openai_serving_speech", None)
+        state = getattr(app, "state", None)
+        serving_speech = getattr(state, "openai_serving_speech", None) if state is not None else None
         if serving_speech is not None:
             serving_speech.shutdown()
         sock.close()
@@ -1954,18 +1955,6 @@ def video_response_from_request(model_name: str, req: VideoGenerationRequest) ->
     return resp
 
 
-async def decode_and_save_video_output(output: Any, file_name: str) -> str:
-    if not output.b64_json:
-        raise RuntimeError(f"Video output for {file_name} did not include b64_json content.")
-
-    try:
-        video_bytes = base64.b64decode(output.b64_json)
-    except Exception as decode_exc:
-        raise RuntimeError(f"Failed to decode generated video payload for {file_name}") from decode_exc
-
-    return await STORAGE_MANAGER.save(video_bytes, file_name)
-
-
 def _cleanup_video(video_id: str, output_path: str | None):
     try:
         if output_path is not None:
@@ -1989,15 +1978,12 @@ async def _run_video_generation_job(
     started_at = time.perf_counter()
     output_path = None
     try:
-        response = await handler.generate_videos(request, video_id, reference_image=reference_image)
-        if not response.data:
-            raise RuntimeError("Video generation completed but returned no outputs.")
-
-        if (video_count := len(response.data)) > 1:
-            logger.warning("Video request %s generated %s outputs but we only expected one.", video_id, video_count)
+        video_bytes, stage_durations, peak_memory_mb = await handler.generate_video_bytes(
+            request, video_id, reference_image=reference_image
+        )
 
         file_name = f"{video_id}.{job.file_extension}"
-        output_path = await decode_and_save_video_output(response.data[0], file_name)
+        output_path = await STORAGE_MANAGER.save(video_bytes, file_name)
         logger.info("Video request %s persisted %s output file.", video_id, output_path)
 
         await VIDEO_STORE.update_fields(
@@ -2008,6 +1994,8 @@ async def _run_video_generation_job(
                 "file_name": file_name,
                 "completed_at": int(time.time()),
                 "inference_time_s": time.perf_counter() - started_at,
+                "stage_durations": stage_durations,
+                "peak_memory_mb": peak_memory_mb,
             },
         )
     except Exception as exc:
@@ -2181,7 +2169,7 @@ async def create_video_sync(
     request_id = f"video_sync-{random_uuid()}"
     started_at = time.perf_counter()
     try:
-        video_bytes = await asyncio.wait_for(
+        video_bytes, stage_durations, peak_memory_mb = await asyncio.wait_for(
             handler.generate_video_bytes(request, request_id, reference_image=reference_image),
             timeout=VIDEO_SYNC_TIMEOUT_S,
         )
@@ -2207,6 +2195,8 @@ async def create_video_sync(
             "X-Request-Id": request_id,
             "X-Model": effective_model_name,
             "X-Inference-Time-S": f"{inference_time_s:.3f}",
+            "X-Stage-Durations": json.dumps(stage_durations, separators=(",", ":")),
+            "X-Peak-Memory-MB": f"{peak_memory_mb:.3f}",
         },
     )
 
