@@ -1090,6 +1090,24 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
                 multimodal_outputs={"codes": {"audio": audio_codes_list}},
             )
 
+        # Direct fallback: if the buffer path produced nothing, read
+        # _last_audio_codes directly from the current step's sample().
+        # This handles the case where postprocess() returned {} (because
+        # _last_audio_codes was None at that point) but sample() later
+        # populated it for the current step.
+        codes_direct = getattr(self, "_last_audio_codes", None)
+        if codes_direct is not None and isinstance(codes_direct, torch.Tensor):
+            valid_mask = codes_direct[:, 0] >= 0
+            if bool(valid_mask.any()):
+                return OmniOutput(
+                    text_hidden_states=hidden,
+                    multimodal_outputs={
+                        "codes": {
+                            "audio": [codes_direct[valid_mask].to(torch.int32)]
+                        }
+                    },
+                )
+
         # Fallbacks: explicit kwarg or wrapped model_kwargs dicts (preserved for
         # direct-API callers that don't go through the runner buffer).
         audio_codes = kwargs.get("audio_codes")
@@ -1181,6 +1199,14 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
         audio_token_id = int(self.config.audio_token_id)
         audio_delay_id = int(self.config.audio_delay_token_id)
         is_audio = (sampled_flat == audio_token_id) | (sampled_flat == audio_delay_id)
+
+        # XPU numerical differences may cause the sampler to not produce
+        # exactly audio_token_id even when the bias was applied. Use the
+        # audio-mode mask from _apply_audio_mode_bias as the authoritative
+        # source of which rows are in audio mode.
+        audio_mode_mask = getattr(self, "_last_audio_mode_mask", None)
+        if audio_mode_mask is not None and audio_mode_mask.shape == is_audio.shape:
+            is_audio = is_audio | audio_mode_mask.to(is_audio.device)
 
         if not hasattr(self, "_audio_state"):
             self._audio_state: dict[int, dict[str, Any]] = {}
@@ -1578,6 +1604,7 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
         # suppress the audio-code sampling at the prefill-end step so the
         # first audio frame is sampled from the correct hidden state.
         first_after_bos = torch.zeros(num_rows, dtype=torch.bool, device=logits.device)
+        audio_mode_mask = torch.zeros(num_rows, dtype=torch.bool, device=logits.device)
         for i in range(num_rows):
             prev: int | None = None
             if output_ids is not None and i < len(output_ids):
@@ -1626,7 +1653,10 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
                 if 0 <= tok < row.shape[-1]:
                     mask[tok] = row[tok]
             logits[i].copy_(mask)
+            # Record that this row is in audio mode (bias was applied).
+            audio_mode_mask[i] = True
         self._last_first_audio_after_bos = first_after_bos
+        self._last_audio_mode_mask = audio_mode_mask
 
     has_postprocess: bool = True
 

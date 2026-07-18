@@ -293,8 +293,21 @@ class StageRuntime:
         self.stage_pools = self._assemble_stage_pools(stage_plans, initialized_clients)
 
     def _before_initialize_stage_replicas(self, stage_plans: Sequence[LogicalStageInitPlan]) -> None:
-        """Hook for runtimes that need infrastructure before replica init."""
-        return None
+        """Hook for runtimes that need infrastructure before replica init.
+
+        On Intel XPU, the parent process may hold a Level Zero device context
+        that claims the entire device memory pool.  Release it before spawning
+        child worker processes so they see free memory on startup.
+        """
+        import gc
+        gc.collect()
+        try:
+            import torch
+            if hasattr(torch, 'xpu') and torch.xpu.is_available():
+                if torch.xpu.is_initialized():
+                    torch.xpu.empty_cache()
+        except Exception:
+            pass
 
     def _cleanup_after_initialize_failure(self) -> None:
         """Hook for runtimes that own extra infrastructure during init."""
