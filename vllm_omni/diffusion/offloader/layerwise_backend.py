@@ -341,13 +341,47 @@ class LayerWiseOffloadBackend(OffloadBackend):
                 dit_module.to(self.device)
                 continue
 
+            # Compute which top-level children are parents of dotted-path blocks
+            # e.g., 'language_model.layers' -> skip_parents = {'language_model'}
+            # and the nested block attr within that parent
+            skip_parents: dict[str, list[str]] = {}
+            top_level_blocks: set[str] = set()
+            for bname in blocks_attr_names:
+                if "." in bname:
+                    parts = bname.split(".", 1)
+                    parent_name = parts[0]
+                    nested_attr = parts[1]
+                    if parent_name not in skip_parents:
+                        skip_parents[parent_name] = []
+                    skip_parents[parent_name].append(nested_attr)
+                else:
+                    top_level_blocks.add(bname)
+
             # Move non-block modules to GPU (they stay resident)
             for name, m in dit_module.named_children():
-                if name not in blocks_attr_names:
+                if name in top_level_blocks:
+                    logger.debug(f"Skipped blocks module {name}")
+                elif name in skip_parents:
+                    # This is a parent of dotted-path blocks (e.g., language_model).
+                    # Move its non-block sub-children to GPU, but skip the block containers.
+                    nested_block_attrs = set(skip_parents[name])
+                    for child_name, child_mod in m.named_children():
+                        if child_name not in nested_block_attrs:
+                            child_mod.to(self.device)
+                            logger.debug(f"Moved {name}.{child_name} to device {self.device}")
+                        else:
+                            logger.debug(f"Skipped nested blocks module {name}.{child_name}")
+                    # Move parent's own params/buffers to GPU
+                    for param in m._parameters.values():
+                        if param is not None:
+                            param.data = param.data.to(self.device, non_blocking=True)
+                    for buffer in m._buffers.values():
+                        if buffer is not None:
+                            buffer.data = buffer.data.to(self.device, non_blocking=True)
+                    logger.debug(f"Moved {name} non-block children to device {self.device}")
+                else:
                     m.to(self.device)
                     logger.debug(f"Moved {name} to device {self.device}")
-                else:
-                    logger.debug(f"Skipped blocks module {name}")
 
             # Move top-level params/buffers to GPU (dit_module's own, not sub-modules)
             for param in dit_module._parameters.values():
@@ -433,6 +467,17 @@ class LayerWiseOffloadBackend(OffloadBackend):
             setattr(model.__class__, "_layerwise_offload_blocks_attrs", names)
 
     @staticmethod
+    def _resolve_dotted_attr(model: nn.Module, name: str):
+        """Resolve a dotted attribute path (e.g., 'language_model.layers') via chained getattr."""
+        parts = name.split(".")
+        obj = model
+        for part in parts:
+            obj = getattr(obj, part, None)
+            if obj is None:
+                return None
+        return obj
+
+    @staticmethod
     def get_blocks_from_dit(model: nn.Module) -> tuple[list[str], list[nn.Module]]:
         """
         Retrieve blocks and attribute names from provided DiT model. Blocks attribute names
@@ -442,6 +487,8 @@ class LayerWiseOffloadBackend(OffloadBackend):
         class WanTransformer3DModel(nn.Module):
             _layerwise_offload_blocks_attrs = ["blocks"]
         ```
+
+        Supports dotted paths (e.g., 'language_model.layers') for nested modules.
 
         Returns:
             Tuple of (blocks_attr_names, blocks)
@@ -456,7 +503,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         blocks = []
         for name in blocks_attr_names:
-            attr = getattr(model, name, None)
+            attr = LayerWiseOffloadBackend._resolve_dotted_attr(model, name)
             if attr is None:
                 raise AttributeError(
                     f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "
