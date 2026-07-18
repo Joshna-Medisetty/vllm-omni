@@ -295,6 +295,8 @@ class MistralEncoderModel(nn.Module):
     parallel layers for TP but simple SDPA for attention (no PagedAttention).
     """
 
+    _layerwise_offload_blocks_attrs = ["language_model.model.layers"]
+
     def __init__(self, config: PretrainedConfig, prefix: str = ""):
         super().__init__()
         self._processor = None

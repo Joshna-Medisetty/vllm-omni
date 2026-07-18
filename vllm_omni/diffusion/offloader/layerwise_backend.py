@@ -284,6 +284,45 @@ class LayerWiseOffloadBackend(OffloadBackend):
         self.copy_stream = current_omni_platform.Stream()
         self._blocks: list[list[nn.Module]] = []
 
+    def _move_non_block_children_to_device(
+        self,
+        module: nn.Module,
+        blocks_attr_names: list[str],
+        current_prefix: str,
+        blocks: list[nn.Module],
+    ) -> None:
+        """Recursively move non-block children of a module to the device.
+
+        For dotted paths like 'language_model.model.layers', we need to
+        traverse the hierarchy and move siblings of the blocks container
+        to GPU while leaving the blocks themselves on CPU for layerwise offload.
+        """
+        for name, child in module.named_children():
+            child_path = f"{current_prefix}.{name}"
+            # Check if this child IS the blocks container
+            is_blocks_container = any(
+                attr_name == child_path or attr_name.startswith(child_path + ".")
+                for attr_name in blocks_attr_names
+            )
+            if not is_blocks_container:
+                child.to(self.device)
+                logger.debug(f"Moved {child_path} to device {self.device}")
+            elif child_path in blocks_attr_names:
+                # This is the actual blocks container, skip it
+                logger.debug(f"Skipped blocks container {child_path}")
+            else:
+                # This is an intermediate parent, recurse
+                self._move_non_block_children_to_device(
+                    child, blocks_attr_names, child_path, blocks
+                )
+                # Move its own params/buffers to device
+                for param in child._parameters.values():
+                    if param is not None:
+                        param.data = param.data.to(self.device, non_blocking=True)
+                for buffer in child._buffers.values():
+                    if buffer is not None:
+                        buffer.data = buffer.data.to(self.device, non_blocking=True)
+
     def enable(self, pipeline: nn.Module) -> None:
         if self.enabled:
             logger.warning("LayerWiseOffloadBackend already enabled")
@@ -294,9 +333,85 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
+        # Apply layerwise offloading to encoders that define blocks,
+        # otherwise move them to GPU as resident modules.
         for enc in modules.encoders:
-            enc.to(self.device)
+            blocks_attr_names, blocks = LayerWiseOffloadBackend.get_blocks_from_dit(enc)
+            if blocks and len(blocks) > 1:
+                # Encoder has layerwise-offloadable blocks - treat like a DiT
+                logger.info(
+                    "Applying layer-wise offloading to encoder %s (%d blocks)",
+                    enc.__class__.__name__,
+                    len(blocks),
+                )
+
+                # For dotted paths, we need to find the top-level attr name
+                # to skip when moving non-block children to GPU
+                top_level_block_parents: set[str] = set()
+                for attr_name in blocks_attr_names:
+                    top_level_block_parents.add(attr_name.split(".")[0])
+
+                # Move non-block children to GPU (they stay resident)
+                for name, m in enc.named_children():
+                    if name not in top_level_block_parents:
+                        m.to(self.device)
+                        logger.debug(f"Moved encoder child {name} to device {self.device}")
+                    else:
+                        # For the parent module containing blocks, move non-block
+                        # sub-children to GPU recursively
+                        self._move_non_block_children_to_device(
+                            m, blocks_attr_names, name, blocks
+                        )
+
+                # Move top-level params/buffers of encoder to GPU
+                for param in enc._parameters.values():
+                    if param is not None:
+                        param.data = param.data.to(self.device, non_blocking=True)
+                for buffer in enc._buffers.values():
+                    if buffer is not None:
+                        buffer.data = buffer.data.to(self.device, non_blocking=True)
+
+                # Apply block-wise offloading hooks to encoder blocks
+                num_blocks = len(blocks)
+                last_block, first_block = blocks[-1], blocks[0]
+                last_hook = apply_block_hook(
+                    last_block,
+                    first_block,
+                    self.device,
+                    self.copy_stream,
+                    self.config.pin_cpu_memory,
+                )
+                last_hook.prefetch_layer(non_blocking=False)
+
+                block_hooks: list[LayerwiseOffloadHook] = [last_hook]
+                for i, block in enumerate(blocks[:-1]):
+                    next_block = blocks[(i + 1) % num_blocks]
+                    hook = apply_block_hook(
+                        block,
+                        next_block,
+                        self.device,
+                        self.copy_stream,
+                        self.config.pin_cpu_memory,
+                    )
+                    block_hooks.append(hook)
+
+                for i in range(len(block_hooks)):
+                    block_hooks[i]._prev_hook = block_hooks[i - 1]
+
+                logger.info(
+                    f"Layer-wise offloading enabled on encoder {enc.__class__.__name__} "
+                    f"with {num_blocks} blocks"
+                )
+                self._blocks.append(blocks)
+            else:
+                # Encoder doesn't have layerwise-offloadable blocks, try to move to GPU
+                try:
+                    enc.to(self.device)
+                except RuntimeError:
+                    logger.warning(
+                        "Failed to move encoder %s to GPU, keeping on CPU",
+                        enc.__class__.__name__,
+                    )
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
@@ -433,6 +548,17 @@ class LayerWiseOffloadBackend(OffloadBackend):
             setattr(model.__class__, "_layerwise_offload_blocks_attrs", names)
 
     @staticmethod
+    def _resolve_dotted_attr(model: nn.Module, name: str) -> Any:
+        """Resolve a dotted attribute path like 'language_model.model.layers'."""
+        parts = name.split(".")
+        obj = model
+        for part in parts:
+            obj = getattr(obj, part, None)
+            if obj is None:
+                return None
+        return obj
+
+    @staticmethod
     def get_blocks_from_dit(model: nn.Module) -> tuple[list[str], list[nn.Module]]:
         """
         Retrieve blocks and attribute names from provided DiT model. Blocks attribute names
@@ -442,6 +568,8 @@ class LayerWiseOffloadBackend(OffloadBackend):
         class WanTransformer3DModel(nn.Module):
             _layerwise_offload_blocks_attrs = ["blocks"]
         ```
+
+        Supports dotted attribute paths like 'language_model.model.layers'.
 
         Returns:
             Tuple of (blocks_attr_names, blocks)
@@ -456,7 +584,7 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         blocks = []
         for name in blocks_attr_names:
-            attr = getattr(model, name, None)
+            attr = LayerWiseOffloadBackend._resolve_dotted_attr(model, name)
             if attr is None:
                 raise AttributeError(
                     f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "

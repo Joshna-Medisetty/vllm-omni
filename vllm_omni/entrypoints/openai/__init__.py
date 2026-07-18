@@ -9,18 +9,28 @@ Provides:
 - OmniOpenAIServingChat: Unified chat completion handler for both LLM and diffusion models
 """
 
-from vllm_omni.entrypoints.openai.api_server import (
-    build_async_omni,
-    omni_init_app_state,
-    omni_run_server,
-)
-from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
-
 __all__ = [
-    # Server functions
     "omni_run_server",
     "build_async_omni",
     "omni_init_app_state",
-    # Serving classes
     "OmniOpenAIServingChat",
 ]
+
+
+def __getattr__(name: str):
+    if name in ("build_async_omni", "omni_init_app_state", "omni_run_server"):
+        from vllm_omni.entrypoints.openai.api_server import (
+            build_async_omni,
+            omni_init_app_state,
+            omni_run_server,
+        )
+        _map = {
+            "build_async_omni": build_async_omni,
+            "omni_init_app_state": omni_init_app_state,
+            "omni_run_server": omni_run_server,
+        }
+        return _map[name]
+    if name == "OmniOpenAIServingChat":
+        from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
+        return OmniOpenAIServingChat
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

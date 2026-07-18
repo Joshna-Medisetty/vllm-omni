@@ -374,6 +374,7 @@ class Flux2Pipeline(
         ]
 
         self._execution_device = get_local_device()
+        _cpu_offload = self.od_config.enable_cpu_offload or self.od_config.enable_layerwise_offload
         model = od_config.model
         # Check if model is a local path
         local_files_only = os.path.exists(model)
@@ -396,7 +397,9 @@ class Flux2Pipeline(
         self.text_encoder = MistralEncoderModel(
             text_encoder_config,
             prefix="text_encoder",
-        ).to(self._execution_device)
+        )
+        if not _cpu_offload:
+            self.text_encoder = self.text_encoder.to(self._execution_device)
         self.tokenizer = PixtralProcessor.from_pretrained(
             model, subfolder="tokenizer", local_files_only=local_files_only
         )
@@ -405,9 +408,9 @@ class Flux2Pipeline(
             system_message_t2i=SYSTEM_MESSAGE_UPSAMPLING_T2I,
             system_message_i2i=SYSTEM_MESSAGE_UPSAMPLING_I2I,
         )
-        self.vae = AutoencoderKLFlux2.from_pretrained(model, subfolder="vae", local_files_only=local_files_only).to(
-            self._execution_device
-        )
+        self.vae = AutoencoderKLFlux2.from_pretrained(model, subfolder="vae", local_files_only=local_files_only)
+        if not _cpu_offload:
+            self.vae = self.vae.to(self._execution_device)
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, Flux2Transformer2DModel)
         self.transformer = Flux2Transformer2DModel(
             quant_config=od_config.quantization_config, od_config=od_config, **transformer_kwargs
