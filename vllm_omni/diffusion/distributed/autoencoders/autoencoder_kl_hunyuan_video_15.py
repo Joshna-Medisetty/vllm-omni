@@ -21,6 +21,13 @@ class DistributedAutoencoderKLHunyuanVideo15(AutoencoderKLHunyuanVideo15, Distri
     @classmethod
     def from_pretrained(cls, *args: Any, **kwargs: Any):
         model = super().from_pretrained(*args, **kwargs)
+        # Reduce spatial tile size from 16x16 latent (256x256 pixel) to
+        # 8x8 latent (128x128 pixel) to cut conv3d workspace by ~4x.
+        # This prevents OOM on XPU when the temporal dimension is large.
+        model.tile_latent_min_height = 8
+        model.tile_latent_min_width = 8
+        model.tile_sample_min_height = 128
+        model.tile_sample_min_width = 128
         model.init_distributed()
         return model
 
