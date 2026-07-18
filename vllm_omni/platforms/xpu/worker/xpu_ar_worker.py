@@ -12,4 +12,7 @@ class XPUARWorker(OmniWorkerMixin, XPUWorker):
 
     def init_device(self):
         super().init_device()
+        # OMNI: v2 model runner does not include omni AR hooks;
+        # force v1 path for compile_or_warm_up_model.
+        self.use_v2_model_runner = False
         self.model_runner: XPUARModelRunner = XPUARModelRunner(self.vllm_config, self.device)
