@@ -11,6 +11,7 @@ import math
 
 from vllm.config import CacheConfig
 from vllm.logger import init_logger
+from vllm.platforms import current_platform
 from vllm.utils.mem_utils import MemorySnapshot, format_gib
 
 logger = init_logger(__name__)
@@ -29,12 +30,36 @@ def request_memory_tolerant(
     ``OmniGPUWorkerBase.determine_available_memory()`` already does per-process
     NVML accounting and correctly computes the KV cache budget regardless.
 
+    On XPU, the Level Zero driver's getMemoryInfo may report free=0 at
+    subprocess startup because the allocator free-list is empty before any
+    tensor allocation. This is a driver quirk (unlike CUDA's cudaMemGetInfo
+    which reports OS-level free VRAM). When free_memory == 0 and
+    total_memory > 0 on XPU, we skip the cap and use the full requested
+    budget.
+
     Logs a warning when the budget is capped so operators can detect
     under-provisioned GPU memory.
     """
     requested_memory = math.ceil(init_snapshot.total_memory * cache_config.gpu_memory_utilization)
 
     if init_snapshot.free_memory < requested_memory:
+        # XPU driver quirk: reports free=0 at subprocess startup when the
+        # allocator free-list is empty before first allocation. In this case
+        # the full device memory is actually available, so skip the cap.
+        if (
+            current_platform.is_xpu()
+            and init_snapshot.free_memory == 0
+            and init_snapshot.total_memory > 0
+        ):
+            logger.info(
+                "XPU reports 0 free memory on device %s at startup "
+                "(driver quirk: allocator free-list empty before first "
+                "allocation). Using total * utilization (%s GiB) as budget.",
+                init_snapshot.device_,
+                format_gib(requested_memory),
+            )
+            return requested_memory
+
         capped = init_snapshot.free_memory
         logger.warning(
             "Free memory on device %s (%s/%s GiB) on startup is less than "
