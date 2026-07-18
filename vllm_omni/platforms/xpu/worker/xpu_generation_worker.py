@@ -13,3 +13,6 @@ class XPUGenerationWorker(OmniWorkerMixin, XPUWorker):
     def init_device(self):
         super().init_device()
         self.model_runner: XPUGenerationModelRunner = XPUGenerationModelRunner(self.vllm_config, self.device)
+        # XPUGenerationModelRunner is V1-based (inherits GPUGenerationModelRunner)
+        # so we must use the V1 warmup path in compile_or_warm_up_model.
+        self.use_v2_model_runner = False

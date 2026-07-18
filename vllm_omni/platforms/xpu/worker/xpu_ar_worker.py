@@ -13,3 +13,6 @@ class XPUARWorker(OmniWorkerMixin, XPUWorker):
     def init_device(self):
         super().init_device()
         self.model_runner: XPUARModelRunner = XPUARModelRunner(self.vllm_config, self.device)
+        # XPUARModelRunner is V1-based (inherits OmniGPUModelRunner -> GPUModelRunner V1)
+        # so we must use the V1 warmup path in compile_or_warm_up_model.
+        self.use_v2_model_runner = False
