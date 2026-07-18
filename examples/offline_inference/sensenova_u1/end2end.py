@@ -161,6 +161,11 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--enable-layerwise-offload",
+        action="store_true",
+        help="Enable layerwise (blockwise) CPU offloading on DiT modules.",
+    )
+    parser.add_argument(
         "--cache-backend",
         type=str,
         default=None,
@@ -198,6 +203,7 @@ def main():
         tensor_parallel_size=args.tensor_parallel_size,
         enforce_eager=args.enforce_eager,
         enable_cpu_offload=args.enable_cpu_offload,
+        enable_layerwise_offload=args.enable_layerwise_offload,
         cache_backend=args.cache_backend,
         enable_cache_dit_summary=args.enable_cache_dit_summary,
         cfg_parallel_size=args.cfg_parallel_size,

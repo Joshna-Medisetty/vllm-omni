@@ -642,6 +642,7 @@ class SenseNovaU1Model(nn.Module):
         has_separate_cfg=True,
         cached_adapter_cls=SensenovaCachedAdapter,
     )
+    _layerwise_offload_blocks_attrs = ["layers"]
 
     def __init__(self, config, quant_config=None, prefix: str = ""):
         super().__init__()
