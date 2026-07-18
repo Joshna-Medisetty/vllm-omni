@@ -161,8 +161,9 @@ class LTX2Pipeline(nn.Module, CFGParallelMixin, ProgressBarMixin, SupportsCompon
     supports_request_batch = False
 
     _dit_modules: ClassVar[list[str]] = ["transformer"]
-    _encoder_modules: ClassVar[list[str]] = ["text_encoder"]
+    _encoder_modules: ClassVar[list[str]] = ["text_encoder", "connectors"]
     _vae_modules: ClassVar[list[str]] = ["vae", "audio_vae"]
+    _resident_modules: ClassVar[list[str]] = ["vocoder"]
 
     # Audio is diffused jointly with video; warmup must size audio tokens.
     dummy_run_num_frames = 2

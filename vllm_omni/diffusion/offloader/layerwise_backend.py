@@ -294,16 +294,25 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
+        # Register sequential offload hooks on encoders so they load to GPU
+        # on-demand and offload siblings. This prevents all encoders from
+        # being permanently resident (which OOMs on large text_encoders like
+        # Gemma3 in LTX-2 on 30 GiB GPUs).
+        from vllm_omni.diffusion.offloader.sequential_backend import SequentialOffloadHook
         for enc in modules.encoders:
-            enc.to(self.device)
+            other_encoders = [e for e in modules.encoders if e is not enc]
+            registry = HookRegistry.get_or_create(enc)
+            hook = SequentialOffloadHook(
+                offload_targets=other_encoders,
+                device=self.device,
+                pin_memory=self.config.pin_cpu_memory,
+            )
+            registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
 
-        # Move VAE(s) to GPU if available
-        for vae in modules.vaes:
-            try:
-                vae.to(self.device, non_blocking=True)
-            except Exception as exc:
-                logger.debug("Failed to move VAE to GPU: %s", exc)
+        # Keep VAE(s) on CPU; they will be loaded to GPU on demand during
+        # the decode phase. This saves ~3 GiB of GPU memory during the
+        # encode_prompt and denoising phases, which is critical for large
+        # models like LTX-2 on 30 GiB GPUs.
 
         # Move resident modules to GPU (small modules needed every forward)
         for name, module in zip(modules.resident_names, modules.resident_modules):
