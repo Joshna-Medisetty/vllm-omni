@@ -21,7 +21,7 @@ import torch
 from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from transformers.utils.hub import cached_file
-from vllm.entrypoints.generate.base.serving import GenerateBaseServing as OpenAIServing
+from vllm.entrypoints.serve.engine.serving import BaseServing as OpenAIServing
 from vllm.entrypoints.launcher import terminate_if_errored
 from vllm.entrypoints.openai.engine.protocol import (
     ErrorResponse,

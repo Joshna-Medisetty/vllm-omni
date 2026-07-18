@@ -84,7 +84,7 @@ from vllm.entrypoints.speech_to_text.translation.serving import (
     OpenAIServingTranslation,
 )
 from vllm.logger import init_logger
-from vllm.renderers.online_renderer import OnlineRenderer
+from vllm.entrypoints.scale_out.render.serving import ServingRender as OnlineRenderer
 from vllm.tasks import POOLING_TASKS
 from vllm.tool_parsers import ToolParserManager
 from vllm.utils import random_uuid
@@ -905,6 +905,7 @@ async def omni_init_app_state(
     state.online_renderer = OnlineRenderer(
         model_config=engine_client.model_config,
         renderer=engine_client.renderer,
+        model_registry=state.openai_serving_models.registry,
         request_logger=request_logger,
         chat_template=resolved_chat_template,
         chat_template_content_format=args.chat_template_content_format,
