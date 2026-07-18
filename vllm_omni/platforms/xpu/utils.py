@@ -11,6 +11,12 @@ def torch_cuda_wrapper():
         torch.cuda.default_stream = torch.xpu.current_stream
         torch.cuda.current_stream = torch.xpu.current_stream
         torch.cuda.stream = torch.xpu.stream
+        torch.cuda.set_stream = torch.xpu.set_stream
+
+        def _xpu_event(*args, blocking=None, **kwargs):
+            return torch.xpu.Event(*args, **kwargs)
+
+        torch.cuda.Event = _xpu_event
         yield
     finally:
         pass

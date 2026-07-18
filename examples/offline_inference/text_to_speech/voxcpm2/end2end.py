@@ -95,6 +95,7 @@ def main():
     engine = Omni(
         model=args.model,
         deploy_config=args.deploy_config,
+        trust_remote_code=True,
     )
 
     from transformers import AutoTokenizer
