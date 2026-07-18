@@ -6,7 +6,7 @@ import json
 import math
 import os
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
@@ -33,6 +33,8 @@ from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.model_loader.diffusers_loader import DiffusersPipelineLoader
 from vllm_omni.diffusion.model_loader.hub_prefetch import from_pretrained_with_prefetch, prefetch_subfolders
 from vllm_omni.diffusion.models.hidream_image import HiDreamImageTransformer2DModel
+from vllm_omni.diffusion.models.interface import SupportsComponentDiscovery
+from vllm_omni.platforms import current_omni_platform
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.utils.tf_utils import get_transformer_config_kwargs
@@ -144,7 +146,12 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfilerMixin, ProgressBarMixin):
+class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfilerMixin, ProgressBarMixin, SupportsComponentDiscovery):
+    _dit_modules: ClassVar[list[str]] = ["transformer"]
+    _encoder_modules: ClassVar[list[str]] = ["text_encoder", "text_encoder_2", "text_encoder_3", "text_encoder_4"]
+    _vae_modules: ClassVar[list[str]] = ["vae"]
+    _resident_modules: ClassVar[list[str]] = []
+
     def __init__(
         self,
         *,
@@ -981,6 +988,13 @@ class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfile
         do_true_cfg = true_cfg_scale > 1 and has_neg_prompt
         self.check_cfg_parallel_validity(true_cfg_scale, has_neg_prompt)
 
+        # Move encoders back to GPU for encoding (they may have been
+        # offloaded to CPU in a previous forward() call)
+        _cpu_offload = self.od_config.enable_cpu_offload or self.od_config.enable_layerwise_offload
+        if _cpu_offload:
+            for _enc in [self.text_encoder, self.text_encoder_2, self.text_encoder_3, self.text_encoder_4]:
+                _enc.to(self.device)
+
         # 3. Encode prompt
         lora_scale = self.attention_kwargs.get("scale", None) if self.attention_kwargs is not None else None
         (
@@ -1015,6 +1029,13 @@ class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfile
             prompt_embeds_t5 = torch.cat([negative_prompt_embeds_t5, prompt_embeds_t5], dim=0)
             prompt_embeds_llama3 = torch.cat([negative_prompt_embeds_llama3, prompt_embeds_llama3], dim=1)
             pooled_prompt_embeds = torch.cat([negative_pooled_prompt_embeds, pooled_prompt_embeds], dim=0)
+
+        # Offload text encoders to CPU to free GPU memory for denoising
+        _cpu_offload = self.od_config.enable_cpu_offload or self.od_config.enable_layerwise_offload
+        if _cpu_offload:
+            for _enc in [self.text_encoder, self.text_encoder_2, self.text_encoder_3, self.text_encoder_4]:
+                _enc.to("cpu")
+            current_omni_platform.empty_cache()
 
         # 4. Prepare latent variables
         num_channels_latents = self.transformer.in_channels

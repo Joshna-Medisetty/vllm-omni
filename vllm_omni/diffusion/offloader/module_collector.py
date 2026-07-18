@@ -79,6 +79,7 @@ class ModuleDiscovery:
         "text_encoder",
         "text_encoder_2",
         "text_encoder_3",
+        "text_encoder_4",
         "image_encoder",
         "mllm",
     ]
