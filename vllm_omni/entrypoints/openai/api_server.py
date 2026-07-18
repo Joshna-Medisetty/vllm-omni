@@ -60,7 +60,10 @@ from vllm.entrypoints.pooling.classify.serving import ServingClassification
 from vllm.entrypoints.pooling.embed.serving import ServingEmbedding as OpenAIServingEmbedding
 from vllm.entrypoints.pooling.pooling.serving import ServingPooling
 from vllm.entrypoints.pooling.scoring.serving import ServingScores
-from vllm.entrypoints.scale_out.token_in_token_out.serving import ServingTokens
+try:
+    from vllm.entrypoints.scale_out.token_in_token_out.serving import ServingTokens
+except (ImportError, ModuleNotFoundError):
+    ServingTokens = None  # type: ignore[assignment,misc]
 
 # vLLM moved `base` from openai.basic.api_router to serve.instrumentator.basic.
 # Keep a fallback for older/newer upstream layouts during rebase windows.
