@@ -1,3 +1,15 @@
+# IndexTTS2 two-GPU deploy profile.
+#
+# Stage 0 (GPT2 AR talker) on device 0, Stage 1 (S2Mel + BigVGAN) on device 1.
+# Each stage gets a full GPU with no memory contention.
+#
+# Usage:
+#   python examples/offline_inference/text_to_speech/indextts2/end2end.py \
+#     --model IndexTeam/IndexTTS-2 \
+#     --deploy-config vllm_omni/deploy/indextts2_2gpu.yaml \
+#     --ref-audio tests/assets/indextts2/ref_audio.wav \
+#     --text "Hello, this is a test."
+
 async_chunk: false
 trust_remote_code: true
 connectors:
@@ -12,7 +24,7 @@ connectors:
 stages:
   - stage_id: 0
     max_num_seqs: 4
-    gpu_memory_utilization: 0.3
+    gpu_memory_utilization: 0.4
     enable_prefix_caching: false
     skip_tokenizer_init: true
     tokenizer: gpt2
@@ -32,7 +44,7 @@ stages:
       detokenize: false
   - stage_id: 1
     max_num_seqs: 4
-    gpu_memory_utilization: 0.25
+    gpu_memory_utilization: 0.4
     enable_prefix_caching: false
     skip_tokenizer_init: true
     tokenizer: gpt2
@@ -40,7 +52,7 @@ stages:
     async_scheduling: true
     max_num_batched_tokens: 8192
     max_model_len: 32768
-    devices: "0"
+    devices: "1"
     input_connectors:
       from_stage_0: connector_of_shared_memory
     hf_overrides:

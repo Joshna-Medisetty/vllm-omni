@@ -60,7 +60,7 @@ def kaiser_sinc_filter1d(cutoff: float, half_width: float, kernel_size: int) -> 
     elif current_omni_platform.is_xpu():
         kaiser_window = torch.kaiser_window(
             kernel_size, beta=beta, periodic=False, dtype=torch.float32, device="cpu"
-        ).to("xpu")
+        )
     else:
         kaiser_window = torch.kaiser_window(kernel_size, beta=beta, periodic=False, dtype=torch.float32)
 
