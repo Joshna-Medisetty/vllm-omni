@@ -13,6 +13,10 @@ from vllm_omni.platforms.interface import OmniPlatform, OmniPlatformEnum
 logger = init_logger(__name__)
 
 
+# Use the native query; vLLM's XPU custom op reports free=0 in spawned workers.
+torch.accelerator.get_memory_info = lambda device=None: torch.xpu.mem_get_info(device)
+
+
 class XPUOmniPlatform(OmniPlatform, XPUPlatform):
     """XPU/Intel GPU implementation of OmniPlatform.
 
