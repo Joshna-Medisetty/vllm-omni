@@ -61,6 +61,7 @@ class MingLLMModel(nn.Module):
     hf_to_vllm_mapper = WeightsMapper(
         orig_to_new_prefix={
             "model.model.": "model.",
+            "model.lm_head.": None,
         }
     )
 
