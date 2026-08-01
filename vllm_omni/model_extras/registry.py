@@ -17,6 +17,9 @@ from vllm_omni.model_extras.bagel import (
     BAGEL_EXTRA_OUTPUT_PARAMS,
     BAGEL_INIT_EXTRA_ARGS_FOR_NON_DIFFUSION_STAGES,
 )
+from vllm_omni.model_extras.glm_image import (
+    build_text_to_image_prompt as build_glm_image_text_to_image_prompt,
+)
 from vllm_omni.model_extras.bagel import (
     build_image_to_image_prompt as build_bagel_image_to_image_prompt,
 )
@@ -251,6 +254,14 @@ _EXTRA_SPECS: dict[str, dict[str, Any]] = {
         "init_extra_args_for_non_diffusion_stages": MING_FLASH_OMNI_INIT_EXTRA_ARGS_FOR_NON_DIFFUSION_STAGES,
         "text_to_image_prompt_builder": build_ming_flash_omni_text_to_image_prompt,
         "image_to_image_prompt_builder": build_ming_flash_omni_image_to_image_prompt,
+    },
+    "GlmImagePipeline": {
+        "text_to_image_prompt_builder": build_glm_image_text_to_image_prompt,
+        "init_extra_args_for_non_diffusion_stages": True,
+    },
+    "GlmImageForConditionalGeneration": {
+        "text_to_image_prompt_builder": build_glm_image_text_to_image_prompt,
+        "init_extra_args_for_non_diffusion_stages": True,
     },
 }
 
