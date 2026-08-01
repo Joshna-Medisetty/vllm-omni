@@ -9,18 +9,20 @@ Provides:
 - OmniOpenAIServingChat: Unified chat completion handler for both LLM and diffusion models
 """
 
-from vllm_omni.entrypoints.openai.api_server import (
-    build_async_omni,
-    omni_init_app_state,
-    omni_run_server,
-)
-from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
+try:
+    from vllm_omni.entrypoints.openai.api_server import (
+        build_async_omni,
+        omni_init_app_state,
+        omni_run_server,
+    )
+except (ImportError, ModuleNotFoundError):
+    build_async_omni = None  # type: ignore[assignment,misc]
+    omni_init_app_state = None  # type: ignore[assignment,misc]
+    omni_run_server = None  # type: ignore[assignment,misc]
 
-__all__ = [
-    # Server functions
-    "omni_run_server",
-    "build_async_omni",
-    "omni_init_app_state",
-    # Serving classes
-    "OmniOpenAIServingChat",
-]
+try:
+    from vllm_omni.entrypoints.openai.serving_chat import OmniOpenAIServingChat
+except (ImportError, ModuleNotFoundError):
+    OmniOpenAIServingChat = None  # type: ignore[assignment,misc]
+
+__all__ = [n for n in ("omni_run_server", "build_async_omni", "omni_init_app_state", "OmniOpenAIServingChat") if vars().get(n) is not None]
