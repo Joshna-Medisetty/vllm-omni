@@ -294,9 +294,92 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
+        # Move encoders to GPU if they fit; otherwise apply block-wise offloading
         for enc in modules.encoders:
-            enc.to(self.device)
+            enc_size_gib = sum(p.numel() * p.element_size() for p in enc.parameters()) / (1024**3)
+            if enc_size_gib < 20.0:  # fits on GPU as resident
+                enc.to(self.device)
+            else:
+                # Encoder too large for GPU; apply block-wise offloading if possible
+                blocks_attr_names, blocks = LayerWiseOffloadBackend.get_blocks_from_dit(enc)
+                if blocks and len(blocks) > 1:
+                    logger.info(
+                        f"Encoder {enc.__class__.__name__} ({enc_size_gib:.1f} GiB) "
+                        f"too large for GPU; applying block-wise offloading on {len(blocks)} layers"
+                    )
+                    # Determine which top-level children contain blocks (should not be moved wholesale)
+                    blocks_root_names = set()
+                    for attr_name in blocks_attr_names:
+                        root = attr_name.split(".")[0]
+                        blocks_root_names.add(root)
+
+                    # Move non-block children to GPU (small resident modules)
+                    for name, m in enc.named_children():
+                        if name not in blocks_root_names:
+                            m.to(self.device)
+                        else:
+                            # For the subtree containing blocks, move non-block parts to GPU
+                            # Walk down the dotted path, moving sibling modules at each level
+                            for attr_name in blocks_attr_names:
+                                if not attr_name.startswith(name):
+                                    continue
+                                parts = attr_name.split(".")
+                                # Walk each intermediate level and move siblings to GPU
+                                current = enc
+                                for depth, part in enumerate(parts[:-1]):
+                                    current = getattr(current, part)
+                                    next_part = parts[depth + 1]
+                                    for child_name, child_m in current.named_children():
+                                        if child_name != next_part:
+                                            child_m.to(self.device)
+                                    # Move this level's own params/buffers
+                                    for param in current._parameters.values():
+                                        if param is not None:
+                                            param.data = param.data.to(self.device, non_blocking=True)
+                                    for buffer in current._buffers.values():
+                                        if buffer is not None:
+                                            buffer.data = buffer.data.to(self.device, non_blocking=True)
+
+                    # Move top-level params/buffers of encoder to GPU
+                    for param in enc._parameters.values():
+                        if param is not None:
+                            param.data = param.data.to(self.device, non_blocking=True)
+                    for buffer in enc._buffers.values():
+                        if buffer is not None:
+                            buffer.data = buffer.data.to(self.device, non_blocking=True)
+
+                    # Apply block-wise hooks (same pattern as DiT blocks)
+                    last_block, first_block = blocks[-1], blocks[0]
+                    last_hook = apply_block_hook(
+                        last_block,
+                        first_block,
+                        self.device,
+                        self.copy_stream,
+                        self.config.pin_cpu_memory,
+                    )
+                    last_hook.prefetch_layer(non_blocking=False)
+
+                    block_hooks: list[LayerwiseOffloadHook] = [last_hook]
+                    for i, block in enumerate(blocks[:-1]):
+                        next_block = blocks[(i + 1) % len(blocks)]
+                        hook = apply_block_hook(
+                            block,
+                            next_block,
+                            self.device,
+                            self.copy_stream,
+                            self.config.pin_cpu_memory,
+                        )
+                        block_hooks.append(hook)
+
+                    for i in range(len(block_hooks)):
+                        block_hooks[i]._prev_hook = block_hooks[i - 1]
+
+                    self._blocks.append(blocks)
+                else:
+                    logger.warning(
+                        f"Encoder {enc.__class__.__name__} ({enc_size_gib:.1f} GiB) "
+                        f"too large for GPU and has no offloadable blocks; keeping on CPU"
+                    )
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
@@ -456,7 +539,13 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         blocks = []
         for name in blocks_attr_names:
-            attr = getattr(model, name, None)
+            # Support dotted attribute paths (e.g. "language_model.model.layers")
+            parts = name.split(".")
+            attr = model
+            for part in parts:
+                attr = getattr(attr, part, None)
+                if attr is None:
+                    break
             if attr is None:
                 raise AttributeError(
                     f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "

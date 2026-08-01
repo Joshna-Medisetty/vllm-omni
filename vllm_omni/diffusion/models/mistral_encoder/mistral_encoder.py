@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import torch
 import torch.nn as nn
@@ -306,6 +306,8 @@ class MistralEncoderModel(nn.Module):
     Accepts a HuggingFace Mistral3Config (or its text_config). Uses vLLM
     parallel layers for TP but simple SDPA for attention (no PagedAttention).
     """
+
+    _layerwise_offload_blocks_attrs: ClassVar[list[str]] = ['language_model.model.layers']
 
     def __init__(
         self,

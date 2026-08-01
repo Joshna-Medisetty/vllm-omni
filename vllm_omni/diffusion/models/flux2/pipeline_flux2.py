@@ -407,7 +407,8 @@ class Flux2Pipeline(
             prefix="text_encoder",
             quant_config=te_quant_config,
         )
-        if not any(param.is_meta for param in self.text_encoder.parameters()):
+        _skip_device_move = self.od_config.enable_cpu_offload or self.od_config.enable_layerwise_offload
+        if not _skip_device_move and not any(param.is_meta for param in self.text_encoder.parameters()):
             self.text_encoder.to(self._execution_device)
         self.tokenizer = PixtralProcessor.from_pretrained(
             model, subfolder="tokenizer", local_files_only=local_files_only
@@ -419,7 +420,9 @@ class Flux2Pipeline(
         )
         self.vae = DistributedAutoencoderKLFlux2.from_pretrained(
             model, subfolder="vae", local_files_only=local_files_only
-        ).to(self._execution_device)
+        )
+        if not _skip_device_move:
+            self.vae = self.vae.to(self._execution_device)
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, Flux2Transformer2DModel)
         transformer_quant_config = _resolve_component_quant_config(od_config.quantization_config, "transformer")
         self.transformer = Flux2Transformer2DModel(
