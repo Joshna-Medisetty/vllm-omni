@@ -70,7 +70,9 @@ from vllm_omni.diffusion.models.schedulers.scheduling_flow_unipc_multistep impor
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
-from vllm_omni.entrypoints.openai.video_api_utils import positive_float
+import importlib as _importlib
+_video_api_utils = _importlib.import_module('vllm_omni.entrypoints.openai.video_api_utils')
+positive_float = _video_api_utils.positive_float
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 from .action import (
