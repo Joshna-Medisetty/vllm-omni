@@ -77,6 +77,7 @@ class _DiffusionVllmModelConfig:
     disable_cascade_attn: bool = False
     enable_return_routed_experts: bool = False
     is_moe: bool = False
+    head_dtype: Any | None = None
 
     def is_quantized(self) -> bool:
         return self.quantization is not None

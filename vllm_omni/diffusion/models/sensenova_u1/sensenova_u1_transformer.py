@@ -635,6 +635,8 @@ class SenseNovaU1DecoderLayer(nn.Module):
 
 
 class SenseNovaU1Model(nn.Module):
+    _layerwise_offload_blocks_attrs = ["layers"]
+
     _cache_dit_adapter_config = CacheDiTAdapterConfig(
         block_forward_patterns={
             "layers": ForwardPattern.Pattern_3,
@@ -663,6 +665,7 @@ class SenseNovaU1Model(nn.Module):
     def forward(
         self,
         input_ids=None,
+        embed_only: bool = False,
         image_gen_indicators=None,
         indexes=None,
         attention_mask=None,
@@ -679,6 +682,9 @@ class SenseNovaU1Model(nn.Module):
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
+
+        if embed_only:
+            return SenseNovaU1ModelOutput(last_hidden_state=inputs_embeds, past_key_values=None)
 
         if use_cache and past_key_values is None:
             past_key_values = DynamicCache()
@@ -760,9 +766,8 @@ class SenseNovaU1ForCausalLM(nn.Module):
         if embed_only:
             if input_ids is None:
                 raise ValueError("embed_only=True requires input_ids")
-            return SenseNovaU1CausalLMOutput(
-                inputs_embeds=self.model.embed_tokens(input_ids),
-            )
+            outputs = self.model(input_ids=input_ids, embed_only=True)
+            return SenseNovaU1CausalLMOutput(inputs_embeds=outputs.last_hidden_state)
 
         outputs = self.model(
             input_ids=input_ids,
