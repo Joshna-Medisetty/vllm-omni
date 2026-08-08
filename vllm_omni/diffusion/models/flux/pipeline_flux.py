@@ -62,6 +62,9 @@ def get_flux_post_process_func(
     image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor * 2)
 
     def post_process_func(images: torch.Tensor):
+        # Crop bottom 4 rows to remove XPU VAE decoder boundary artifacts
+        if images.shape[2] > 4:
+            images = images[:, :, :-4, :]
         return image_processor.postprocess(images)
 
     return post_process_func
@@ -663,7 +666,12 @@ class FluxPipeline(
         else:
             latents = self._unpack_latents(latents, height, width, self.vae_scale_factor)
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
-            image = self.vae.decode(latents, return_dict=False)[0]
+            # Upcast VAE and latents to float32 to avoid XPU bfloat16 boundary artifacts
+            vae_dtype = self.vae.dtype
+            self.vae.to(dtype=torch.float32)
+            image = self.vae.decode(latents.to(torch.float32), return_dict=False)[0]
+            self.vae.to(dtype=vae_dtype)
+            image = image.to(vae_dtype)
 
         stage_durations = self.stage_durations if hasattr(self, "stage_durations") else None
         n = num_images_per_prompt
