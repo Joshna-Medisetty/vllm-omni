@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from typing import ClassVar
 
 import torch
+import torch.nn.functional as F
 from diffusers.image_processor import VaeImageProcessor
 from diffusers.schedulers.scheduling_flow_match_euler_discrete import (
     FlowMatchEulerDiscreteScheduler,
@@ -758,7 +759,18 @@ class StableDiffusion3Pipeline(nn.Module, CFGParallelMixin, DiffusionPipelinePro
             latents = latents.to(self.vae.dtype)
             latents = (latents / self.vae.config.scaling_factor) + self.vae.config.shift_factor
 
+            # Pad latent by 1 row (bottom) and 1 col (right) using reflect padding
+            # to push convolutional boundary artifacts into the padded region.
+            # pad order: (left, right, top, bottom)
+            latents = F.pad(latents, (0, 1, 0, 1), mode='reflect')
+
             image = self.vae.decode(latents, return_dict=False)[0]
+
+            # Crop decoded image back to the original target pixel dimensions,
+            # removing the boundary artifact region.
+            target_h = height
+            target_w = width
+            image = image[:, :, :target_h, :target_w]
 
         return split_diffusion_output_by_request(
             DiffusionOutput(
