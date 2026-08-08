@@ -7,6 +7,8 @@ Shared between LayerWiseOffloadBackend and DistributedLayerwiseOffloadBackend.
 
 from __future__ import annotations
 
+from operator import attrgetter
+
 from torch import nn
 from vllm.logger import init_logger
 
@@ -47,7 +49,10 @@ def get_blocks_from_dit(model: nn.Module) -> tuple[list[str], list[nn.Module]]:
 
     blocks: list[nn.Module] = []
     for name in blocks_attr_names:
-        attr = getattr(model, name, None)
+        try:
+            attr = attrgetter(name)(model)
+        except AttributeError:
+            attr = None
         if attr is None:
             raise AttributeError(
                 f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "

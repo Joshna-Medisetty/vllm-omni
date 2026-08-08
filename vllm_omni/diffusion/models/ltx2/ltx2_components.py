@@ -74,8 +74,8 @@ class LTXComponentProfile:
 
 LTX2_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2",
-    dit_modules=("transformer",),
-    encoder_modules=("text_encoder", "connectors"),
+    dit_modules=("transformer", "text_encoder"),
+    encoder_modules=("connectors",),
     vae_modules=("vae", "audio_vae"),
     resident_modules=("vocoder",),
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
@@ -83,8 +83,8 @@ LTX2_COMPONENT_PROFILE = LTXComponentProfile(
 
 LTX23_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2_3",
-    dit_modules=("transformer",),
-    encoder_modules=("text_encoder", "connectors"),
+    dit_modules=("transformer", "text_encoder"),
+    encoder_modules=("connectors",),
     vae_modules=("vae", "audio_vae"),
     resident_modules=("vocoder",),
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
@@ -94,8 +94,8 @@ LTX23_COMPONENT_PROFILE = LTXComponentProfile(
 
 LTX2_DISTILLED_COMPONENT_PROFILE = LTXComponentProfile(
     name="ltx2_distilled",
-    dit_modules=("transformer",),
-    encoder_modules=("text_encoder", "connectors"),
+    dit_modules=("transformer", "text_encoder"),
+    encoder_modules=("connectors",),
     vae_modules=("vae", "audio_vae"),
     resident_modules=("vocoder", "latent_upsampler"),
     video_vae_cls=DistributedAutoencoderKLLTX2Video,
@@ -350,6 +350,8 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
             local_files_only=local_files_only,
             dtype=dtype,
         )
+    # Enable layerwise offload for the text encoder's transformer layers
+    pipeline.text_encoder.__class__._layerwise_offload_blocks_attrs = ["model.language_model.layers"]
     pipeline.connectors = _load_component(
         LTX2TextConnectors,
         model,

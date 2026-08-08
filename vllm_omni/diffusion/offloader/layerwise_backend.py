@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from itertools import chain
+from operator import attrgetter
 from typing import Any
 
 import torch
@@ -342,11 +343,23 @@ class LayerWiseOffloadBackend(OffloadBackend):
                 continue
 
             # Move non-block modules to GPU (they stay resident)
+            # For dotted paths like 'language_model.model.layers', extract
+            # the top-level component name to skip it from full GPU placement.
+            top_level_block_names = {n.split(".")[0] for n in blocks_attr_names}
             for name, m in dit_module.named_children():
-                if name not in blocks_attr_names:
+                if name not in top_level_block_names:
                     m.to(self.device)
                     logger.debug(f"Moved {name} to device {self.device}")
                 else:
+                    # For dotted paths, move non-block sub-children to GPU
+                    # while keeping the block container on CPU for offloading
+                    dotted_names = [n for n in blocks_attr_names if n.startswith(name + ".")]
+                    if dotted_names:
+                        # Walk the dotted path to find the parent of the blocks
+                        # and move sibling modules to GPU
+                        self._move_non_block_submodules(
+                            m, [n[len(name) + 1:] for n in dotted_names]
+                        )
                     logger.debug(f"Skipped blocks module {name}")
 
             # Move top-level params/buffers to GPU (dit_module's own, not sub-modules)
@@ -397,6 +410,45 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         if len(self._blocks) > 0 and len(self._blocks[0]) > 0:
             self.enabled = True
+
+    def _move_non_block_submodules(
+        self, module: nn.Module, remaining_paths: list[str]
+    ) -> None:
+        """Recursively move non-block sub-modules to GPU for dotted block paths.
+
+        For a path like 'model.layers', this walks into 'model' and moves all
+        children except 'layers' to GPU, then moves top-level params/buffers of
+        each intermediate module to GPU.
+        """
+        # Extract the next level of the path
+        next_level: dict[str, list[str]] = {}
+        leaf_names: set[str] = set()
+        for path in remaining_paths:
+            parts = path.split(".", 1)
+            if len(parts) == 1:
+                # This is the leaf (the actual blocks container)
+                leaf_names.add(parts[0])
+            else:
+                next_level.setdefault(parts[0], []).append(parts[1])
+
+        # Move top-level params/buffers of this module to GPU
+        for param in module._parameters.values():
+            if param is not None:
+                param.data = param.data.to(self.device, non_blocking=True)
+        for buffer in module._buffers.values():
+            if buffer is not None:
+                buffer.data = buffer.data.to(self.device, non_blocking=True)
+
+        # Process children
+        skip_names = leaf_names | set(next_level.keys())
+        for name, child in module.named_children():
+            if name not in skip_names:
+                child.to(self.device)
+                logger.debug(f"Moved sub-module {name} to device {self.device}")
+            elif name in next_level:
+                # Recurse deeper
+                self._move_non_block_submodules(child, next_level[name])
+            # else: it's a leaf (blocks container), leave on CPU for offloading
 
     def disable(self) -> None:
         if not self.enabled:
@@ -456,7 +508,10 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         blocks = []
         for name in blocks_attr_names:
-            attr = getattr(model, name, None)
+            try:
+                attr = attrgetter(name)(model)
+            except AttributeError:
+                attr = None
             if attr is None:
                 raise AttributeError(
                     f"Attribute '{name}' declared in _layerwise_offload_blocks_attrs "
