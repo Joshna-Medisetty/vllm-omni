@@ -39,6 +39,8 @@ from vllm.v1.worker.gpu_model_runner import (
 from vllm.v1.worker.ubatch_utils import maybe_create_ubatch_slices
 from vllm.v1.worker.utils import is_residual_scattered_for_sp
 
+from vllm_omni.platforms import current_omni_platform
+
 from vllm_omni.data_entry_keys import flatten_payload
 from vllm_omni.distributed.omni_connectors.kv_transfer_manager import OmniKVTransferManager
 from vllm_omni.distributed.omni_connectors.utils.config import (
@@ -124,7 +126,7 @@ class _AsyncCPUPayloadSnapshot:
 def _snapshot_tensor_payload_to_cpu_async(
     value: Any,
     *,
-    copy_stream: torch.cuda.Stream,
+    copy_stream,
     pin_memory: bool,
 ) -> _AsyncCPUPayloadSnapshot:
     cuda_sources: list[torch.Tensor] = []
@@ -132,9 +134,9 @@ def _snapshot_tensor_payload_to_cpu_async(
     if not cuda_sources:
         return _AsyncCPUPayloadSnapshot(cloned, None, cuda_sources)
 
-    source_stream = torch.cuda.current_stream()
-    ready_event = torch.cuda.Event()
-    with torch.cuda.stream(copy_stream):
+    source_stream = current_omni_platform.current_stream()
+    ready_event = current_omni_platform.Event()
+    with current_omni_platform.stream(copy_stream):
         copy_stream.wait_stream(source_stream)
         cpu_payload = _copy_tensor_payload_to_cpu(cloned, pin_memory)
         ready_event.record(copy_stream)
@@ -180,8 +182,8 @@ class OmniAsyncGPUModelRunnerOutput(AsyncGPUModelRunnerOutput):
         self._routed_experts = routed_experts
         self._has_fault: torch.Tensor | None = None
 
-        default_stream = torch.cuda.current_stream()
-        with torch.cuda.stream(async_output_copy_stream):
+        default_stream = current_omni_platform.current_stream()
+        with current_omni_platform.stream(async_output_copy_stream):
             async_output_copy_stream.wait_stream(default_stream)
             # Keep sampled-token feedback identical to upstream async
             # scheduling. This tensor drives the next decode step, so avoid
@@ -215,7 +217,7 @@ class OmniAsyncGPUModelRunnerOutput(AsyncGPUModelRunnerOutput):
     def _build_output_in_background(self) -> None:
         try:
             if self._cuda_device is not None:
-                torch.cuda.set_device(self._cuda_device)
+                current_omni_platform.set_device(self._cuda_device)
             self._build_model_runner_output_once()
         except BaseException as exc:  # noqa: BLE001 - re-raised by get_output().
             self._background_exception = exc
@@ -1829,10 +1831,10 @@ class GPUARModelRunner(OmniGPUModelRunner, OmniConnectorModelRunnerMixin):
             )
         return True
 
-    def _get_or_create_omni_payload_copy_stream(self) -> torch.cuda.Stream:
+    def _get_or_create_omni_payload_copy_stream(self):
         stream = getattr(self, "_omni_payload_copy_stream", None)
         if stream is None:
-            stream = torch.cuda.Stream()
+            stream = current_omni_platform.Stream()
             self._omni_payload_copy_stream = stream
         return stream
 
