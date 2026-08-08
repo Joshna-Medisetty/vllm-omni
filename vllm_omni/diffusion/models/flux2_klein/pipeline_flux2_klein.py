@@ -1023,7 +1023,7 @@ class Flux2KleinPipeline(
                 latent_image_ids = latent_ids
             elif image_latents is not None:
                 latent_model_input = torch.cat([latents, image_latents], dim=1).to(self.transformer.dtype)
-                latent_image_ids = torch.cat([latent_ids, image_latent_ids], dim=1)
+                latent_image_ids = latent_ids
 
             positive_kwargs = {
                 "hidden_states": latent_model_input,
@@ -1101,9 +1101,25 @@ class Flux2KleinPipeline(
         if output_type == "latent":
             image = latents
         else:
-            if latents.dtype != self.vae.dtype:
+            # Upcast to float32 for VAE decode to avoid bfloat16 NaN
+            # (AutoencoderKLFlux2 config has force_upcast=True but the class
+            # does not implement it; we handle it here at the pipeline level)
+            needs_upcast = (
+                getattr(self.vae.config, 'force_upcast', False)
+                and latents.dtype != torch.float32
+            )
+            if needs_upcast:
+                original_vae_dtype = self.vae.dtype
+                self.vae.to(dtype=torch.float32)
+                latents = latents.to(torch.float32)
+            elif latents.dtype != self.vae.dtype:
                 latents = latents.to(self.vae.dtype)
             image = self.vae.decode(latents, return_dict=False)[0]
+            # Safety net: replace any NaN/Inf from VAE decode with 0
+            if image.isnan().any() or image.isinf().any():
+                image = torch.nan_to_num(image, nan=0.0, posinf=1.0, neginf=-1.0)
+            if needs_upcast:
+                self.vae.to(dtype=original_vae_dtype)
 
         return DiffusionOutput(
             output=image, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
