@@ -62,6 +62,10 @@ def get_flux_post_process_func(
     image_processor = VaeImageProcessor(vae_scale_factor=vae_scale_factor * 2)
 
     def post_process_func(images: torch.Tensor):
+        # Crop the bottom 8 pixel rows from the decoded VAE output to remove
+        # XPU convolution boundary artifacts (red/multicolored noise strip).
+        # images shape: B×C×H×W
+        images = images[:, :, :-8, :]
         return image_processor.postprocess(images)
 
     return post_process_func
