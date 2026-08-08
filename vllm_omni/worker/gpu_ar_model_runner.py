@@ -39,6 +39,7 @@ from vllm.v1.worker.gpu_model_runner import (
 from vllm.v1.worker.ubatch_utils import maybe_create_ubatch_slices
 from vllm.v1.worker.utils import is_residual_scattered_for_sp
 
+from vllm_omni.platforms import current_omni_platform
 from vllm_omni.data_entry_keys import flatten_payload
 from vllm_omni.distributed.omni_connectors.kv_transfer_manager import OmniKVTransferManager
 from vllm_omni.distributed.omni_connectors.utils.config import (
@@ -215,7 +216,7 @@ class OmniAsyncGPUModelRunnerOutput(AsyncGPUModelRunnerOutput):
     def _build_output_in_background(self) -> None:
         try:
             if self._cuda_device is not None:
-                torch.cuda.set_device(self._cuda_device)
+                current_omni_platform.set_device(self._cuda_device)
             self._build_model_runner_output_once()
         except BaseException as exc:  # noqa: BLE001 - re-raised by get_output().
             self._background_exception = exc
