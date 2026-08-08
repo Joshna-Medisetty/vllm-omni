@@ -9,6 +9,8 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from vllm_omni.platforms import current_omni_platform
+
 import numpy as np
 import PIL.Image
 import torch
@@ -116,11 +118,35 @@ class LTXTextConditioningMixin:
         )
         text_input_ids = text_inputs.input_ids.to(device)
         prompt_attention_mask = text_inputs.attention_mask.to(device)
-        hidden_states = self.text_encoder(
+
+        # Temporarily offload VAE/audio_vae/vocoder to CPU to free GPU memory
+        # for text_encoder forward pass (they are not needed during encoding)
+        _offloaded_modules = []
+        for attr_name in ('vae', 'audio_vae', 'vocoder'):
+            mod = getattr(self, attr_name, None)
+            if mod is not None and hasattr(mod, 'to'):
+                mod.to('cpu')
+                _offloaded_modules.append((attr_name, mod))
+
+        # Ensure text_encoder is on GPU for forward pass (may have been
+        # offloaded to CPU on a previous call).
+        self.text_encoder.to(device)
+
+        hidden_states = self.text_encoder.model(
             input_ids=text_input_ids,
             attention_mask=prompt_attention_mask,
             output_hidden_states=True,
+            use_cache=False,
         ).hidden_states
+
+        # Offload text_encoder to CPU immediately to free ~17-18 GiB
+        # before torch.stack allocates the combined hidden_states tensor.
+        self.text_encoder.to("cpu")
+        current_omni_platform.empty_cache()
+
+        # Bring back VAE/audio_vae/vocoder to GPU
+        for attr_name, mod in _offloaded_modules:
+            mod.to(device)
 
         prompt_embeds = torch.stack(hidden_states, dim=-1).flatten(2, 3).to(dtype=dtype)
         prompt_embeds = _repeat_prompt_tensor_for_outputs(prompt_embeds, num_videos_per_prompt)
@@ -276,6 +302,7 @@ class LTXTextConditioningMixin:
                 device=self.device,
             )
         )
+
         padding_side = getattr(self.tokenizer, "padding_side", "left")
 
         if self.do_classifier_free_guidance and self.connector_batches_cfg:
