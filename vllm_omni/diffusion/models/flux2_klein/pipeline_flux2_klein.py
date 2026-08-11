@@ -1101,9 +1101,13 @@ class Flux2KleinPipeline(
         if output_type == "latent":
             image = latents
         else:
-            if latents.dtype != self.vae.dtype:
-                latents = latents.to(self.vae.dtype)
-            image = self.vae.decode(latents, return_dict=False)[0]
+            if getattr(self.vae.config, "force_upcast", False):
+                vae_dtype = self.vae.dtype
+                self.vae.to(torch.float32)
+                image = self.vae.decode(latents.to(torch.float32), return_dict=False)[0].to(vae_dtype)
+                self.vae.to(vae_dtype)
+            else:
+                image = self.vae.decode(latents.to(self.vae.dtype), return_dict=False)[0]
 
         return DiffusionOutput(
             output=image, stage_durations=self.stage_durations if hasattr(self, "stage_durations") else None
