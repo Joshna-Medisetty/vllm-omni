@@ -38,7 +38,7 @@ stages:
     async_scheduling: true
     enable_prefix_caching: false
     max_num_batched_tokens: 512
-    max_model_len: 2048
+    max_model_len: 4096
     devices: "0"
     output_connectors:
       to_stage_1: glm_tts_shm
@@ -46,7 +46,7 @@ stages:
       temperature: 1.0
       top_k: 25
       top_p: 0.8
-      max_tokens: 2048
+      max_tokens: 4096
       min_tokens: 1
       seed: 42
       detokenize: false

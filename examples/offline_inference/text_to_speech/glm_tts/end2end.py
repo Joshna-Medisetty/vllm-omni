@@ -139,6 +139,7 @@ def main(args):
                 args.model,
                 args.text,
                 args.ref_text,
+                trust_remote_code=True,
             ),
         }
     ]
@@ -151,7 +152,7 @@ def main(args):
     )
 
     t_start = time.perf_counter()
-    outputs = omni.generate(inputs)
+    outputs = omni.generate(inputs, list(omni.default_sampling_params_list))
     elapsed = (time.perf_counter() - t_start) * 1000
 
     assert outputs, "No outputs returned"
