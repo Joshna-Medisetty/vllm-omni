@@ -693,40 +693,40 @@ class SpeakerXVectorFeatures(nn.Module):
         return fbank, fbank_lengths
 
     @torch.no_grad()
-    @torch.autocast(enabled=False, device_type="cuda")
     def forward(self, audio, audio_lengths=None, fbank=None, fbank_lengths=None, **_kwargs):
         self.model.eval()
-        audio = audio.float()
-        if audio.dim() == 3:
-            if audio.size(1) != 1:
-                raise ValueError(f"Speaker encoder expects mono audio, got shape {tuple(audio.shape)}.")
-            audio = audio[:, 0]
-        elif audio.dim() != 2:
-            raise ValueError(f"Speaker encoder expects a 2D or 3D audio tensor, got shape {tuple(audio.shape)}.")
+        with torch.autocast(device_type=audio.device.type, enabled=False):
+            audio = audio.float()
+            if audio.dim() == 3:
+                if audio.size(1) != 1:
+                    raise ValueError(f"Speaker encoder expects mono audio, got shape {tuple(audio.shape)}.")
+                audio = audio[:, 0]
+            elif audio.dim() != 2:
+                raise ValueError(f"Speaker encoder expects a 2D or 3D audio tensor, got shape {tuple(audio.shape)}.")
 
-        audio, original_audio_lengths, cropped_audio_lengths, starts = self._crop_audio(
-            audio,
-            audio_lengths=audio_lengths,
-        )
-
-        if fbank is None:
-            fbank, fbank_lengths = self._extract_fbank_batch(
+            audio, original_audio_lengths, cropped_audio_lengths, starts = self._crop_audio(
                 audio,
-                cropped_audio_lengths,
-            )
-        else:
-            if not isinstance(fbank, torch.Tensor):
-                raise TypeError("Speaker encoder expects `fbank` to be a torch.Tensor.")
-            if fbank.dim() != 3 or fbank.size(0) != audio.size(0):
-                raise ValueError(
-                    f"Speaker encoder expects `fbank` with shape (B, T, F) and matching batch size, got {tuple(fbank.shape)}."  # noqa: E501
-                )
-            fbank, fbank_lengths = self._crop_fbank(
-                fbank.to(device=audio.device, dtype=torch.float32),
-                fbank_lengths,
-                original_audio_lengths,
-                cropped_audio_lengths,
-                starts,
+                audio_lengths=audio_lengths,
             )
 
-        return self.model(fbank, lengths=fbank_lengths)
+            if fbank is None:
+                fbank, fbank_lengths = self._extract_fbank_batch(
+                    audio,
+                    cropped_audio_lengths,
+                )
+            else:
+                if not isinstance(fbank, torch.Tensor):
+                    raise TypeError("Speaker encoder expects `fbank` to be a torch.Tensor.")
+                if fbank.dim() != 3 or fbank.size(0) != audio.size(0):
+                    raise ValueError(
+                        f"Speaker encoder expects `fbank` with shape (B, T, F) and matching batch size, got {tuple(fbank.shape)}."  # noqa: E501
+                    )
+                fbank, fbank_lengths = self._crop_fbank(
+                    fbank.to(device=audio.device, dtype=torch.float32),
+                    fbank_lengths,
+                    original_audio_lengths,
+                    cropped_audio_lengths,
+                    starts,
+                )
+
+            return self.model(fbank, lengths=fbank_lengths)

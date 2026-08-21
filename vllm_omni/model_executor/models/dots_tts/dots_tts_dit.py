@@ -82,11 +82,11 @@ def rotate_half(x):
     return torch.cat((-x2, x1), dim=-1)
 
 
-@torch.autocast(enabled=False, device_type="cuda")
 def apply_rotary_pos_emb(pos, t):
-    if pos.dim() == 3:
-        pos = pos.unsqueeze(1)
-    return t * pos.cos() + rotate_half(t) * pos.sin()
+    with torch.autocast(device_type=pos.device.type, enabled=False):
+        if pos.dim() == 3:
+            pos = pos.unsqueeze(1)
+        return t * pos.cos() + rotate_half(t) * pos.sin()
 
 
 class RotaryEmbedding(nn.Module):
@@ -105,17 +105,17 @@ class RotaryEmbedding(nn.Module):
         self.inv_freq = inv_freq.to(device=self.inv_freq.device, dtype=torch.float32)
         return self
 
-    @torch.autocast(enabled=False, device_type="cuda")
     def forward(self, t):
-        inv_freq = self.inv_freq
-        if inv_freq.device != t.device:
-            raise RuntimeError(f"RotaryEmbedding buffer device mismatch: inv_freq={inv_freq.device} input={t.device}.")
-        t = t.to(dtype=inv_freq.dtype)
-        if t.dim() == 1:
-            freqs = torch.einsum("i , j -> i j", t, inv_freq)
-        else:
-            freqs = torch.einsum("bi, j -> bij", t, inv_freq)
-        return torch.cat((freqs, freqs), dim=-1)
+        with torch.autocast(device_type=t.device.type, enabled=False):
+            inv_freq = self.inv_freq
+            if inv_freq.device != t.device:
+                raise RuntimeError(f"RotaryEmbedding buffer device mismatch: inv_freq={inv_freq.device} input={t.device}.")
+            t = t.to(dtype=inv_freq.dtype)
+            if t.dim() == 1:
+                freqs = torch.einsum("i , j -> i j", t, inv_freq)
+            else:
+                freqs = torch.einsum("bi, j -> bij", t, inv_freq)
+            return torch.cat((freqs, freqs), dim=-1)
 
 
 class MultiHeadAttention(nn.Module):
@@ -193,7 +193,7 @@ class MultiHeadAttention(nn.Module):
         attn_bias = torch.zeros(B, self.num_heads, L, S, dtype=q.dtype, device=q.device)
 
         if mask is not None:
-            attn_bias.masked_fill_(mask.logical_not(), float("-inf"))
+            attn_bias.masked_fill_(mask.logical_not(), torch.finfo(attn_bias.dtype).min)
 
         out = F.scaled_dot_product_attention(
             q,
@@ -250,7 +250,7 @@ class MultiHeadAttention(nn.Module):
         )
         attn_bias.masked_fill_(
             (causal_mask & valid_mask).unsqueeze(0).unsqueeze(0).logical_not(),
-            float("-inf"),
+            torch.finfo(attn_bias.dtype).min,
         )
 
         out = F.scaled_dot_product_attention(

@@ -1213,18 +1213,18 @@ class AudioVAE(nn.Module):
         latents = self.extract_latents(data["sample"])
         return {"sample": self.inference_from_latents(latents)}
 
-    @torch.autocast(enabled=False, device_type="cuda")
     def extract_latents(self, x, do_sample=False):
-        x = x.float()
-        x = self.audio_encoder(x)
-        x = x.permute(0, 2, 1)
-        x = self.enc_mi_layer(x)
-        x = x.permute(0, 2, 1)
-        x = self.pre_proj(x)
-        if do_sample:
-            m_q, logs_q = torch.split(x, self.h.latent_dim, dim=1)
-            x = m_q + torch.randn_like(m_q) * torch.exp(logs_q)
-        return x
+        with torch.autocast(device_type=x.device.type, enabled=False):
+            x = x.float()
+            x = self.audio_encoder(x)
+            x = x.permute(0, 2, 1)
+            x = self.enc_mi_layer(x)
+            x = x.permute(0, 2, 1)
+            x = self.pre_proj(x)
+            if do_sample:
+                m_q, logs_q = torch.split(x, self.h.latent_dim, dim=1)
+                x = m_q + torch.randn_like(m_q) * torch.exp(logs_q)
+            return x
 
     def inference_from_latents(self, x, do_sample=True, noise_scale=1.0):
         if do_sample:

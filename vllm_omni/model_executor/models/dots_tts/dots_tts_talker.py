@@ -1007,12 +1007,8 @@ class DotsTTSForConditionalGeneration(nn.Module):
         # TimestepEmbedder internally forces fp32 (`.float()` on freqs);
         # without autocast the fp32 output hits a bf16 Linear → dtype
         # mismatch.  autocast bridges this for matmuls inside DiT.
-        use_amp = device.type == "cuda" and dtype in (torch.float16, torch.bfloat16)
-        with torch.autocast(
-            device_type=device.type if device.type == "cuda" else "cuda",
-            dtype=dtype if use_amp else torch.float32,
-            enabled=use_amp,
-        ):
+        use_amp = dtype in (torch.float16, torch.bfloat16)
+        with torch.autocast(device_type=device.type, dtype=dtype, enabled=use_amp):
             for step in range(num_steps):
                 t = times[step].reshape(1)
                 z_proj = self._coordinate_proj(z)
