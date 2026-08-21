@@ -221,6 +221,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help='JSON profiler config for torch/cuda profiling, e.g. \'{"profiler":"torch","torch_profiler_dir":"./perf"}\'.',
     )
+    parser.add_argument(
+        "--init-timeout",
+        type=int,
+        default=600,
+        help="Overall orchestrator initialization timeout in seconds.",
+    )
+    parser.add_argument(
+        "--stage-init-timeout",
+        type=int,
+        default=300,
+        help="Per-stage initialization timeout in seconds.",
+    )
     return parser.parse_args()
 
 
@@ -273,6 +285,8 @@ def main():
         cache_config=cache_config,
         enable_cache_dit_summary=args.enable_cache_dit_summary,
         profiler_config=args.profiler_config,
+        init_timeout=args.init_timeout,
+        stage_init_timeout=args.stage_init_timeout,
     )
     if args.boundary_ratio is not None:
         omni_kwargs["boundary_ratio"] = args.boundary_ratio
