@@ -603,6 +603,7 @@ class AudioXPipeline(nn.Module, SupportAudioOutput, DiffusionPipelineProfilerMix
         text_feature, text_mask = conditioning_tensors["text_prompt"]
         audio_feature, audio_mask = conditioning_tensors["audio_prompt"]
 
+        self.maf_block.to(self.device)
         refined = self.maf_block(text_feature, video_feature, audio_feature)
         fused = torch.cat(list(refined.values()), dim=1)
         masks = torch.cat([video_mask, text_mask, audio_mask], dim=1)
@@ -754,6 +755,9 @@ class AudioXPipeline(nn.Module, SupportAudioOutput, DiffusionPipelineProfilerMix
 
     def _encode_video(self, video_list: list[dict], device: torch.device) -> list[torch.Tensor]:
         self.clip_encoder.to(device).eval()
+        self.clip_temp_transformer.to(device)
+        self.clip_proj.to(device)
+        self.clip_proj_sync.to(device)
 
         video_tensors = [item["video_tensors"] for item in video_list]
         video_sync_frames = torch.cat([item["video_sync_frames"] for item in video_list], dim=0).to(device)
@@ -769,7 +773,7 @@ class AudioXPipeline(nn.Module, SupportAudioOutput, DiffusionPipelineProfilerMix
             outputs = self.clip_encoder(pixel_values=pixel_values)
         hidden = outputs.last_hidden_state
         hidden = rearrange(hidden, "(b t) p d -> (b p) t d", b=batch_size, t=time_length)
-        hidden = hidden + self.clip_temp_pos_embedding
+        hidden = hidden + self.clip_temp_pos_embedding.to(device)
         hidden = self.clip_temp_transformer(hidden)
         hidden = rearrange(hidden, "(b p) t d -> b (t p) d", b=batch_size)
         hidden = self.clip_proj(hidden.view(-1, self._clip_in_features))
@@ -777,15 +781,16 @@ class AudioXPipeline(nn.Module, SupportAudioOutput, DiffusionPipelineProfilerMix
 
         sync = self.clip_proj_sync(video_sync_frames.view(-1, 240))
         sync = sync.view(batch_size, self._clip_out_features, -1)
-        hidden = hidden + self.clip_sync_weight * sync
+        hidden = hidden + self.clip_sync_weight.to(device) * sync
 
-        empty = self.clip_empty_visual_feat.expand(batch_size, -1, -1)
+        empty = self.clip_empty_visual_feat.to(device).expand(batch_size, -1, -1)
         hidden = torch.where(is_zero.view(batch_size, 1, 1), empty, hidden)
         return [hidden, torch.ones(batch_size, 1, device=device)]
 
     def _encode_conditioning_tensors(self, batch_metadata: list[dict[str, Any]]) -> dict[str, Any]:
         device = self.device
         audio = torch.cat([item["audio_prompt"] for item in batch_metadata], dim=0).to(device)
+        self.audio_vae_adapter.to(device)
         return {
             "audio_prompt": list(self.audio_vae_adapter(audio)),
             "text_prompt": self._encode_text([item["text_prompt"] for item in batch_metadata], device),
