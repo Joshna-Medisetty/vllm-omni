@@ -1,0 +1,76 @@
+# MiniCPM-o 4.5 single-GPU deploy with reduced context (max_model_len=4096).
+# Designed for GPUs with ~25 GiB free where model weights (~16.83 GiB) leave
+# only ~8.3 GiB headroom. Reduces encoder cache profiling budget to avoid OOM.
+pipeline: minicpmo_4_5
+async_chunk: true
+
+trust_remote_code: true
+enable_prefix_caching: false
+
+connectors:
+  connector_of_shared_memory:
+    name: SharedMemoryConnector
+    extra:
+      connector_get_sleep_s: 0.01
+      connector_get_max_wait_first_chunk: 3000
+      connector_get_max_wait: 300
+      codec_chunk_frames: 25
+      codec_left_context_frames: 3
+
+stages:
+  - stage_id: 0
+    max_num_seqs: 4
+    gpu_memory_utilization: 0.75
+    enforce_eager: true
+    tensor_parallel_size: 1
+    max_model_len: 4096
+    max_num_batched_tokens: 4096
+    devices: "0"
+    limit_mm_per_prompt:
+      image: 4
+      audio: 4
+      video: 1
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 2048
+      seed: 42
+      detokenize: true
+      repetition_penalty: 1.0
+
+  - stage_id: 1
+    max_num_seqs: 4
+    gpu_memory_utilization: 0.15
+    enforce_eager: true
+    max_model_len: 2048
+    max_num_batched_tokens: 2048
+    devices: "0"
+    output_connectors:
+      to_stage_2: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      min_tokens: 50
+      max_tokens: 2048
+      stop_token_ids: [1]
+      seed: 42
+      detokenize: false
+
+  - stage_id: 2
+    max_num_seqs: 4
+    gpu_memory_utilization: 0.10
+    enforce_eager: true
+    enable_chunked_prefill: false
+    max_num_batched_tokens: 4096
+    max_model_len: 4096
+    devices: "0"
+    input_connectors:
+      from_stage_1: connector_of_shared_memory
+    default_sampling_params:
+      temperature: 0.0
+      top_p: 1.0
+      top_k: -1
+      max_tokens: 4096
+      detokenize: true

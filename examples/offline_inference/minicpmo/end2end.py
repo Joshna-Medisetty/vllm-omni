@@ -305,7 +305,16 @@ def main(args):
         seed=SEED,
         detokenize=False,
     )
-    sampling_params_list = [thinker_sampling_params, talker_sampling_params][: omni.num_stages]
+    # Stage 2 (Token2Wav codec): sampling params for the codec stage.
+    codec_sampling_params = SamplingParams(
+        temperature=0.0,
+        top_p=1.0,
+        top_k=-1,
+        max_tokens=4096,
+        seed=SEED,
+        detokenize=True,
+    )
+    sampling_params_list = [thinker_sampling_params, talker_sampling_params, codec_sampling_params][: omni.num_stages]
 
     if args.txt_prompts is None:
         prompts = [query_result.inputs for _ in range(args.num_prompts)]
