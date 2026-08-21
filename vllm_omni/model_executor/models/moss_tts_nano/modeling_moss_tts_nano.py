@@ -218,6 +218,9 @@ class MossTTSNanoForGeneration(nn.Module):
             except ImportError:
                 lm._set_attention_implementation("sdpa")
                 logger.info("MOSS-TTS-Nano using sdpa (flash_attn not installed)")
+        else:
+            lm._set_attention_implementation("sdpa")
+            logger.info("MOSS-TTS-Nano using sdpa on %s (flash_attn not available)", device.type)
         lm.to(device=device)
         lm.eval()
 
