@@ -1297,11 +1297,16 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
         # Sample per-codebook, following the upstream
         # ``HiggsAudioModel._sample_audio_tokens`` pipeline byte-for-byte.
         cb_logits_2d = cb_logits.reshape(-1, cb_logits.shape[-1])
+        if not hasattr(self, '_codec_gen') or self._codec_gen is None:
+            self._codec_gen = torch.Generator(device=cb_logits_2d.device)
+            self._codec_gen.manual_seed(42)
+        _codec_gen = self._codec_gen
         codes_2d = self._sample_audio_codes_upstream(
             cb_logits_2d,
-            temperature=1.0,
+            temperature=0.0,
             top_k=50,
             top_p=0.95,
+            generator=_codec_gen,
         )
         codes_flat = codes_2d.view(cb_logits.shape[0], cb_logits.shape[1]).to(torch.long)
 
@@ -1336,7 +1341,7 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
                 # in RAS resample per upstream — pure softmax + multinomial).
                 resample_logits = cb_logits[local_i, row_indices].float()
                 resample_probs = resample_logits.softmax(dim=-1)
-                resampled = torch.multinomial(resample_probs, num_samples=1).squeeze(-1)
+                resampled = torch.multinomial(resample_probs, num_samples=1, generator=_codec_gen).squeeze(-1)
                 codes_flat[local_i, row_indices] = resampled.to(codes_flat.dtype)
 
         # Apply the upstream delay pattern + EOS ramp-down per request.
@@ -1458,6 +1463,7 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
         temperature: float = 1.0,
         top_k: int | None = None,
         top_p: float | None = None,
+        generator: torch.Generator | None = None,
     ) -> torch.Tensor:
         """Replicate the upstream HF ``LogitsProcessorList`` pipeline that
         ``HiggsAudioModel._sample_audio_tokens`` calls via
@@ -1500,7 +1506,7 @@ class HiggsAudioV2TalkerForConditionalGeneration(nn.Module):
         valid = probs.sum(dim=-1) > 0
         sampled = torch.empty(x.shape[0], dtype=torch.long, device=x.device)
         if valid.any():
-            sampled[valid] = torch.multinomial(probs[valid], num_samples=1).squeeze(-1)
+            sampled[valid] = torch.multinomial(probs[valid], num_samples=1, generator=generator).squeeze(-1)
         if (~valid).any():
             sampled[~valid] = torch.argmax(logits[~valid].float(), dim=-1)
         return sampled
