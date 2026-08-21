@@ -269,7 +269,7 @@ def run_tts(args: argparse.Namespace) -> None:
         text_ids, audio_codes, n_vq = _build_unified_codes(args.model, text, ref_audio, **builder_kwargs)
         print(f"Prefill prompt: {len(text_ids)} tokens, {n_vq}-quantizer audio block")
 
-    omni = Omni(model=args.model, deploy_config=deploy_config, stage_init_timeout=600)
+    omni = Omni(model=args.model, deploy_config=deploy_config, trust_remote_code=True, stage_init_timeout=600)
 
     talker_sp = SamplingParams(
         temperature=1.7,

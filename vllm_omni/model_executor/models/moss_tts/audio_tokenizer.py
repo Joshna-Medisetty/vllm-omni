@@ -691,6 +691,13 @@ class MossAudioTokenizerModel(PreTrainedModel):
     ) -> MossAudioTokenizerDecoderOutput:
         z = self.quantizer.decode_codes(codes)
         d, d_len = z, lengths
+        # The quantizer always produces float32 (hardcoded in decode_codes/decode),
+        # but the decoder may have been cast to a different dtype (e.g. bfloat16)
+        # by the caller. Align dtypes to avoid matmul mismatches.
+        if self.decoder:
+            dec_param = next(self.decoder.parameters(), None)
+            if dec_param is not None and d.dtype != dec_param.dtype:
+                d = d.to(dtype=dec_param.dtype)
         for m in self.decoder:
             d, d_len = m(d, d_len)
         d, d_len = self._restore_channels_from_codec(d, d_len)

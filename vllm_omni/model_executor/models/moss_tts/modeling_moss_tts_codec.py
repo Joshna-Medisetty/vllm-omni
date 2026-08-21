@@ -764,6 +764,16 @@ class MossTTSCodecDecoder(nn.Module):
                 lut.numel() * lut.element_size() / (1024**2),
             )
         self._codec = codec
+
+        # Guard: v1 codec does not support streaming state pool.
+        if self._async_chunk and not callable(getattr(codec, "initialize_decoder_state_pool", None)):
+            logger.warning(
+                "MOSS Audio Tokenizer codec does not support streaming decode "
+                "(no initialize_decoder_state_pool); disabling async_chunk and "
+                "falling back to batch decode."
+            )
+            self._async_chunk = False
+
         inferred_channels = 2 if "v2" in codec_path.lower() else 1
         self._n_channels = int(
             getattr(

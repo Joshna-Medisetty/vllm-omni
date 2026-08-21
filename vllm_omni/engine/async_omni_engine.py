@@ -17,6 +17,7 @@ import uuid
 import weakref
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 import janus
@@ -31,6 +32,7 @@ from vllm.v1.engine.input_processor import InputProcessor
 from vllm_omni.config.config_factory import StageConfigFactory, with_trust_remote_code_override
 from vllm_omni.config.stage_config import (
     DuplexSessionRuntimeConfig,
+    _DEPLOY_DIR,
     load_deploy_config,
 )
 from vllm_omni.diffusion.data import DiffusionParallelConfig, parse_attention_config
@@ -196,7 +198,15 @@ class AsyncOmniEngine:
         self._duplex_control_enabled = bool(pipeline_config and pipeline_config.duplex_control_enabled)
         self.duplex_session_config = DuplexSessionRuntimeConfig()
         if deploy_config_path is not None:
-            self.duplex_session_config = load_deploy_config(deploy_config_path).duplex_session
+            _dp = Path(deploy_config_path)
+            if not _dp.exists() and _dp.parent == Path("."):
+                _bare = _dp.name
+                if not _bare.endswith(".yaml"):
+                    _bare = f"{_bare}.yaml"
+                _cand = _DEPLOY_DIR / _bare
+                if _cand.exists():
+                    _dp = _cand
+            self.duplex_session_config = load_deploy_config(_dp).duplex_session
 
         # Tri-state: None means "not specified" — the deploy yaml's per-stage
         # trust_remote_code stays in effect. An explicit True/False here is a

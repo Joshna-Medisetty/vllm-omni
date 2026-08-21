@@ -339,7 +339,10 @@ class StageConfigFactory:
             return None
         deploy_path = Path(deploy_config_path)
         if not deploy_path.exists() and deploy_path.parent == Path("."):
-            candidate = _DEPLOY_DIR / deploy_path
+            bare_name = deploy_path.name
+            if not bare_name.endswith(".yaml"):
+                bare_name = f"{bare_name}.yaml"
+            candidate = _DEPLOY_DIR / bare_name
             if candidate.exists():
                 deploy_path = candidate
         if not deploy_path.exists():
