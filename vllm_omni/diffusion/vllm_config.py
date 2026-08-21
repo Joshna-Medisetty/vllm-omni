@@ -153,6 +153,19 @@ def configure_diffusion_vllm_config(vllm_config: VllmConfig, od_config: OmniDiff
     vllm_config.parallel_config.enable_expert_parallel = parallel_config.enable_expert_parallel
 
     vllm_config.model_config = _make_diffusion_vllm_model_config(od_config)  # type: ignore[assignment]
+
+    # VllmConfig.__post_init__ translates enforce_eager into CompilationMode.NONE,
+    # but that check ran when model_config was still None (two-step construction).
+    # Replicate the same translation now that model_config is assigned.
+    if vllm_config.model_config.enforce_eager:
+        from vllm.config.compilation import CompilationMode, CUDAGraphMode
+        vllm_config.compilation_config.mode = CompilationMode.NONE
+        vllm_config.compilation_config.cudagraph_mode = CUDAGraphMode.NONE
+        if 'none' in vllm_config.compilation_config.custom_ops:
+            vllm_config.compilation_config.custom_ops.remove('none')
+        if 'all' not in vllm_config.compilation_config.custom_ops:
+            vllm_config.compilation_config.custom_ops.append('all')
+
     vllm_config.quant_config = od_config.quantization_config
     vllm_config.profiler_config = od_config.profiler_config
     if (
