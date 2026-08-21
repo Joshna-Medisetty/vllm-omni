@@ -77,6 +77,18 @@ def parse_args():
             "caption-style default and the model describes instead of answering)."
         ),
     )
+    p.add_argument(
+        "--enable-cpu-offload",
+        action="store_true",
+        default=False,
+        help="Enable module-wise CPU offloading for diffusion models.",
+    )
+    p.add_argument(
+        "--enable-layerwise-offload",
+        action="store_true",
+        default=False,
+        help="Enable layerwise (blockwise) offloading on DiT modules.",
+    )
     # Lance is single-stage diffusion — no deploy YAML needed.  Required
     # engine knobs (``pipeline``, ``enforce_eager``, ``trust_remote_code``,
     # ``max_num_seqs=1`` …) are passed as flat kwargs to ``Omni`` below

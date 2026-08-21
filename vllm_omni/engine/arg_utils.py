@@ -601,3 +601,46 @@ def internal_blacklist_keys() -> frozenset[str]:
     dataclass — this function updates automatically.
     """
     return orchestrator_field_names() - SHARED_FIELDS
+
+
+def nullify_stage_engine_defaults(parser: argparse.ArgumentParser) -> None:
+    """Register common orchestrator/diffusion CLI flags on *parser*.
+
+    Single-stage offline-inference examples call this so that flags like
+    ``--enable-cpu-offload`` are recognized by argparse and forwarded
+    through ``Omni(**vars(args))`` without requiring a deploy YAML.
+
+    Defaults are set to ``None`` / ``False`` so they only take effect
+    when explicitly passed on the command line.
+    """
+    _bool_flags = [
+        ("--enable-cpu-offload", "Enable CPU offloading for diffusion models."),
+        ("--enable-layerwise-offload", "Enable layerwise (blockwise) offloading on DiT modules."),
+    ]
+    _optional_flags = [
+        ("--num-gpus", int, "Number of GPUs for diffusion model."),
+        ("--stage-configs-path", str, "Path to stage configurations YAML."),
+        ("--dtype", str, "Model dtype (e.g. bf16, fp16)."),
+        ("--pipeline", str, "Diffusion pipeline name."),
+        ("--max-num-seqs", int, "Maximum number of sequences per batch."),
+        ("--max-num-batched-tokens", int, "Maximum number of batched tokens."),
+    ]
+    _optional_bool_flags = [
+        ("--enforce-eager", "Disable torch.compile and force eager execution."),
+        ("--trust-remote-code", "Trust remote code from HuggingFace."),
+    ]
+    for flag, help_text in _bool_flags:
+        try:
+            parser.add_argument(flag, action="store_true", default=False, help=help_text)
+        except argparse.ArgumentError:
+            pass
+    for flag, typ, help_text in _optional_flags:
+        try:
+            parser.add_argument(flag, type=typ, default=None, help=help_text)
+        except argparse.ArgumentError:
+            pass
+    for flag, help_text in _optional_bool_flags:
+        try:
+            parser.add_argument(flag, action="store_true", default=None, help=help_text)
+        except argparse.ArgumentError:
+            pass

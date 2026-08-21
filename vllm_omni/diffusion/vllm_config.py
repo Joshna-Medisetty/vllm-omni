@@ -153,6 +153,14 @@ def configure_diffusion_vllm_config(vllm_config: VllmConfig, od_config: OmniDiff
     vllm_config.parallel_config.enable_expert_parallel = parallel_config.enable_expert_parallel
 
     vllm_config.model_config = _make_diffusion_vllm_model_config(od_config)  # type: ignore[assignment]
+
+    # Propagate enforce_eager to compilation_config after model_config is set.
+    # VllmConfig.__post_init__ cannot do this because model_config is None at
+    # construction time (create_base_diffusion_vllm_config passes no model_config).
+    if vllm_config.model_config.enforce_eager:
+        from vllm.config import CompilationMode
+        vllm_config.compilation_config.mode = CompilationMode.NONE
+
     vllm_config.quant_config = od_config.quantization_config
     vllm_config.profiler_config = od_config.profiler_config
     if (
