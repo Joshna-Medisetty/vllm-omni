@@ -367,14 +367,24 @@ def main(args: Any) -> None:
     if args.cfg_alpha is not None:
         extra_args["cfg_alpha"] = args.cfg_alpha
 
-    sampling_params = SamplingParams(
+    stage0_params = SamplingParams(
         max_tokens=max_num_tokens,
+        temperature=0.0,
+        top_p=1.0,
+        top_k=-1,
+        seed=42,
+        repetition_penalty=1.1,
         extra_args=extra_args if extra_args else None,
     )
-    sampling_params_list = [
-        sampling_params,
-        sampling_params,
-    ]
+    stage1_params = SamplingParams(
+        max_tokens=max_num_tokens,
+        temperature=0.9,
+        top_p=0.8,
+        top_k=40,
+        seed=42,
+        repetition_penalty=1.05,
+    )
+    sampling_params_list = [stage0_params, stage1_params]
 
     if args.num_prompts > 1:
         inputs = [inputs] * args.num_prompts
