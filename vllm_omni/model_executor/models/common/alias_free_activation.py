@@ -53,16 +53,11 @@ def kaiser_sinc_filter1d(cutoff: float, half_width: float, kernel_size: int) -> 
         beta = 0.0
 
     # torch.kaiser_window is not supported on NPU / XPU — compute on CPU.
-    if current_omni_platform.is_npu():
-        kaiser_window = torch.kaiser_window(
-            kernel_size, beta=beta, periodic=False, dtype=torch.float32, device="cpu"
-        ).to("npu")
-    elif current_omni_platform.is_xpu():
-        kaiser_window = torch.kaiser_window(
-            kernel_size, beta=beta, periodic=False, dtype=torch.float32, device="cpu"
-        ).to("xpu")
-    else:
-        kaiser_window = torch.kaiser_window(kernel_size, beta=beta, periodic=False, dtype=torch.float32)
+    # The result is registered as a buffer and moved to the correct device
+    # when the parent module is placed on device via register_buffer.
+    kaiser_window = torch.kaiser_window(
+        kernel_size, beta=beta, periodic=False, dtype=torch.float32, device="cpu"
+    )
 
     if is_even:
         time_indices = torch.arange(-half_size, half_size) + 0.5

@@ -14,6 +14,8 @@ stages:
     gpu_memory_utilization: 0.4
     enable_prefix_caching: false
     skip_tokenizer_init: true
+    enforce_eager: true
+    dtype: float32
     tokenizer: gpt2
     async_scheduling: true
     max_num_batched_tokens: 512
@@ -22,8 +24,8 @@ stages:
     output_connectors:
       to_stage_1: connector_of_shared_memory
     default_sampling_params:
-      temperature: 0.8
-      top_p: 0.8
+      temperature: 0.1
+      top_p: 0.95
       top_k: 30
       max_tokens: 1500
       repetition_penalty: 10.0
