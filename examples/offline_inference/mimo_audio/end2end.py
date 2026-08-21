@@ -321,7 +321,8 @@ def main(args):
             print(f"Request ID: {request_id}, Text saved to {out_txt}\n")
         elif stage_outputs.final_output_type == "audio":
             request_id = output.request_id
-            audio_tensor = output.outputs[0].multimodal_output.get("audio")
+            mm_out = output.multimodal_output
+            audio_tensor = mm_out.get("audio") if mm_out else None
 
             if audio_tensor is None:
                 continue

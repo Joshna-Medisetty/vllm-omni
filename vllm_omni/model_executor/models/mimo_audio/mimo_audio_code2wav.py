@@ -99,8 +99,12 @@ class MiMoAudioTokenizerWorker:
             self.audio_tokenizer.config.nfft,
         )
         mel_start = time.monotonic()
-        self.mel_transform = (
-            MelSpectrogram(
+        # torchaudio's MelSpectrogram/melscale_fbanks is CPU-only by design.
+        # Construct on CPU to avoid device mismatch from the active
+        # DeviceContext('xpu:0') set by base_loader.py during model init,
+        # then move to target device.
+        with torch.device('cpu'):
+            mel = MelSpectrogram(
                 sample_rate=self.audio_tokenizer.config.sampling_rate,
                 n_fft=self.audio_tokenizer.config.nfft,
                 hop_length=self.audio_tokenizer.config.hop_length,
@@ -111,9 +115,7 @@ class MiMoAudioTokenizerWorker:
                 power=1.0,
                 center=True,
             )
-            .to(self.device)
-            .to(torch.float32)
-        )
+        self.mel_transform = mel.to(self.device).to(torch.float32)
         logger.info(
             "[tokenizer worker] MelSpectrogram ready in %.2fs",
             time.monotonic() - mel_start,

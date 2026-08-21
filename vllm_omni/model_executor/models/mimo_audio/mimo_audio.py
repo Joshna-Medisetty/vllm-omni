@@ -289,11 +289,16 @@ class MiMoAudioDataParser(MultiModalDataParser):
             )
 
         if not os.path.exists(self.audio_tokenizer_path):
-            raise ValueError(
-                "Audio tokenizer not exists. Provide "
-                "`model_config.audio_tokenizer_path` in the model configuration "
-                "or export MIMO_AUDIO_TOKENIZER_PATH."
-            )
+            try:
+                from huggingface_hub import snapshot_download
+                self.audio_tokenizer_path = snapshot_download(
+                    self.audio_tokenizer_path, allow_patterns=['*'])
+            except Exception as e:
+                raise ValueError(
+                    f"Audio tokenizer not found at "
+                    f"{self.audio_tokenizer_path} and HF download failed: "
+                    f"{e}"
+                ) from e
 
         self.tokenizer_config_path = os.environ.get("MIMO_AUDIO_TOKENIZER_PATH", None)
 
