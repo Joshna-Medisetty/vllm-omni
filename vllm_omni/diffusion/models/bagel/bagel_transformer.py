@@ -22,7 +22,7 @@ from transformers.models.qwen2.modeling_qwen2 import (
 from transformers.utils import ModelOutput
 from vllm.distributed import get_tensor_model_parallel_world_size
 from vllm.logger import init_logger
-from vllm.model_executor.layers.activation import SiluAndMul
+from vllm_omni.diffusion.layers.activation import SiluAndMul
 from vllm.model_executor.layers.linear import (
     ColumnParallelLinear,
     MergedColumnParallelLinear,

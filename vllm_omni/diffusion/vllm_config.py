@@ -10,6 +10,7 @@ from typing import Any
 
 import torch
 from vllm.config import CompilationConfig, DeviceConfig, VllmConfig
+from vllm.config.compilation import CompilationMode
 from vllm.transformers_utils.config import get_hf_text_config
 
 from vllm_omni.diffusion.data import OmniDiffusionConfig
@@ -132,8 +133,12 @@ def create_base_diffusion_vllm_config(
 ) -> VllmConfig:
     """Create the native vLLM 0.27 config used by diffusion."""
 
+    cc = CompilationConfig()
+    if getattr(od_config, "enforce_eager", False):
+        cc.mode = CompilationMode.NONE
+
     return VllmConfig(
-        compilation_config=CompilationConfig(),
+        compilation_config=cc,
         device_config=DeviceConfig(device=device),
         additional_config=od_config.additional_config,
     )
