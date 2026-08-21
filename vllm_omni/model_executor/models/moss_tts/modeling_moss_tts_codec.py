@@ -257,6 +257,7 @@ class MossTTSCodecDecoder(nn.Module):
         self._stream_max_step_frames: int = self._stream_chunk_frames or 100
         self._stream_req_slots: dict[str, int] = {}
         self._async_chunk = bool(getattr(self.vllm_config.model_config, "async_chunk", False))
+        self._codec_supports_streaming = False
         self._streaming_graph_batch_sizes = self._streaming_graph_batch_sizes_from_compilation_config()
         self._streaming_graph_frame_sizes = sorted(
             {frames for frames in (self._initial_stream_chunk_frames, self._stream_chunk_frames) if frames > 0}
@@ -387,7 +388,7 @@ class MossTTSCodecDecoder(nn.Module):
                 continue
             meta = (info.get("meta", {}) if isinstance(info, dict) else {}) or {}
             finished = bool(meta.get("stream_finished", meta.get("finished", False)))
-            streaming_enabled = self._async_chunk
+            streaming_enabled = self._async_chunk and self._codec_supports_streaming
             if seg.numel() % self._n_vq != 0:
                 logger.warning(
                     "MossTTS codec input length %d not divisible by n_vq %d; skipping.",
@@ -764,6 +765,9 @@ class MossTTSCodecDecoder(nn.Module):
                 lut.numel() * lut.element_size() / (1024**2),
             )
         self._codec = codec
+        self._codec_supports_streaming = callable(
+            getattr(codec, "initialize_decoder_state_pool", None)
+        )
         inferred_channels = 2 if "v2" in codec_path.lower() else 1
         self._n_channels = int(
             getattr(

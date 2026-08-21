@@ -690,6 +690,12 @@ class MossAudioTokenizerModel(PreTrainedModel):
         lengths: torch.Tensor,
     ) -> MossAudioTokenizerDecoderOutput:
         z = self.quantizer.decode_codes(codes)
+        # Cast quantizer output to decoder dtype (quantizer stays float32 but
+        # decoder may have been converted to bfloat16 for GPU/XPU inference).
+        if self.decoder:
+            first_param = next(self.decoder.parameters(), None)
+            if first_param is not None and first_param.dtype != z.dtype:
+                z = z.to(first_param.dtype)
         d, d_len = z, lengths
         for m in self.decoder:
             d, d_len = m(d, d_len)
