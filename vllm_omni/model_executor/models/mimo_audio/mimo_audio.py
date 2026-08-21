@@ -877,7 +877,7 @@ class MiMoAudioForConditionalGeneration(
     def generate_audio(self, code: torch.Tensor):
         token2wav_dev = self._module_device(self.token2wav)
         # Check if in CUDA graph capture phase
-        is_capturing = torch.cuda.is_current_stream_capturing()
+        is_capturing = torch.cuda.is_available() and torch.cuda.is_current_stream_capturing()
 
         if isinstance(code, torch.Tensor):
             if is_capturing:

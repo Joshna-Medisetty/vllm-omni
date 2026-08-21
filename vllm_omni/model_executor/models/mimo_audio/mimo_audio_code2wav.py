@@ -99,8 +99,11 @@ class MiMoAudioTokenizerWorker:
             self.audio_tokenizer.config.nfft,
         )
         mel_start = time.monotonic()
-        self.mel_transform = (
-            MelSpectrogram(
+        # Construct MelSpectrogram on CPU to avoid torchaudio bug where
+        # _create_triangular_filterbank mixes CPU zeros with XPU tensors
+        # when a non-CPU default device context is active.
+        with torch.device('cpu'):
+            mel = MelSpectrogram(
                 sample_rate=self.audio_tokenizer.config.sampling_rate,
                 n_fft=self.audio_tokenizer.config.nfft,
                 hop_length=self.audio_tokenizer.config.hop_length,
@@ -111,9 +114,7 @@ class MiMoAudioTokenizerWorker:
                 power=1.0,
                 center=True,
             )
-            .to(self.device)
-            .to(torch.float32)
-        )
+        self.mel_transform = mel.to(self.device).to(torch.float32)
         logger.info(
             "[tokenizer worker] MelSpectrogram ready in %.2fs",
             time.monotonic() - mel_start,
@@ -645,7 +646,7 @@ class MiMoAudioToken2WavForConditionalGenerationVLLM(nn.Module, SupportsPP):
         )
         per_left, per_chunk = self._mimo_codec_runtime_lists(len(request_ids_list), runtime_additional_information)
 
-        is_capturing = torch.cuda.is_current_stream_capturing()
+        is_capturing = torch.cuda.is_available() and torch.cuda.is_current_stream_capturing()
         if is_capturing:
             return OmniOutput(
                 text_hidden_states=None,
@@ -953,7 +954,7 @@ class MiMoAudioToken2WavForConditionalGenerationVLLM(nn.Module, SupportsPP):
 
     def _decode_waveform_from_codes(self, code_tensor: torch.Tensor) -> torch.Tensor:
         # Check if in CUDA graph capture phase
-        is_capturing = torch.cuda.is_current_stream_capturing()
+        is_capturing = torch.cuda.is_available() and torch.cuda.is_current_stream_capturing()
 
         # During CUDA graph capture, return dummy tensor to avoid operations like .cpu() which are not allowed
         if is_capturing:
