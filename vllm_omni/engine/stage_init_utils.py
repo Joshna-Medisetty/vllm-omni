@@ -386,6 +386,23 @@ def _apply_rocm_attention_backend(
     engine_args["attention_backend"] = "TRITON_ATTN"
 
 
+def _apply_xpu_attention_backend(
+    engine_args: dict[str, Any],
+    stage_type: str | StageType,
+) -> None:
+    """Override NVIDIA-only attention backends to XPU-compatible equivalents."""
+    if not current_omni_platform.is_xpu() or stage_type == StageType.DIFFUSION:
+        return
+    backend = engine_args.get("attention_backend")
+    if backend is not None and backend.upper() in ("FLASHINFER", "FLASHINFER_MLA"):
+        logger.warning(
+            "Attention backend %s is not supported on XPU. "
+            "Falling back to FLASH_ATTN.",
+            backend,
+        )
+        engine_args["attention_backend"] = "FLASH_ATTN"
+
+
 def extract_legacy_stage_metadata(stage_config: Any) -> StageMetadata:
     """Extract metadata through the active production legacy path.
 
@@ -397,6 +414,7 @@ def extract_legacy_stage_metadata(stage_config: Any) -> StageMetadata:
     engine_args = stage_config.engine_args
 
     _apply_rocm_attention_backend(engine_args, stage_type)
+    _apply_xpu_attention_backend(engine_args, stage_type)
 
     runtime_cfg = stage_config.runtime
     engine_input_source: list[int] = _get_attr_or_item(stage_config, "engine_input_source", [])
@@ -1100,6 +1118,7 @@ def build_engine_args_dict_from_omni_stage_config(
     """
     engine_args_dict = _project_omni_stage_engine_args(stage_config)
     _apply_rocm_attention_backend(engine_args_dict, stage_config.stage_type)
+    _apply_xpu_attention_backend(engine_args_dict, stage_config.stage_type)
     return _finalize_engine_args_dict(
         engine_args_dict,
         stage_type=stage_config.stage_type,
