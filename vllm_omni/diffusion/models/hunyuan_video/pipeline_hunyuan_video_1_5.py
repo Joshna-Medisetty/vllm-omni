@@ -545,6 +545,12 @@ class HunyuanVideo15Pipeline(
         if output_type == "latent":
             output = latents
         else:
+            # Reduce VAE tile sizes to lower per-tile memory for long videos
+            if hasattr(self.vae, 'tile_latent_min_height'):
+                self.vae.tile_latent_min_height = 8
+                self.vae.tile_latent_min_width = 8
+                self.vae.tile_sample_min_height = 128
+                self.vae.tile_sample_min_width = 128
             latents = latents.to(self.vae.dtype) / self.vae.config.scaling_factor
             output = self.vae.decode(latents, return_dict=False)[0]
 
