@@ -542,6 +542,14 @@ class HunyuanVideo15Pipeline(
         if current_omni_platform.is_available():
             current_omni_platform.empty_cache()
 
+        # Offload text encoders to CPU to free GPU memory for VAE decode
+        if hasattr(self, 'text_encoder') and self.text_encoder is not None:
+            self.text_encoder.to('cpu')
+        if hasattr(self, 'text_encoder_2') and self.text_encoder_2 is not None:
+            self.text_encoder_2.to('cpu')
+        if current_omni_platform.is_available():
+            current_omni_platform.empty_cache()
+
         if output_type == "latent":
             output = latents
         else:
