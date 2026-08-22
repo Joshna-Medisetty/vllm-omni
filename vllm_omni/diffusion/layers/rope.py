@@ -292,6 +292,12 @@ class RotaryEmbeddingWan(RotaryEmbedding):
         cos: torch.Tensor,
         sin: torch.Tensor,
     ) -> torch.Tensor:
+        # Unsqueeze cos/sin to [S, 1, D] so they broadcast over the
+        # heads dimension when x is [B, S, H, D] (same pattern as
+        # forward_musa lines 202-203).
+        if cos.dim() == 2 and x.dim() == 4:
+            cos = cos.unsqueeze(-2)
+            sin = sin.unsqueeze(-2)
         x1, x2 = x.unflatten(-1, (-1, 2)).unbind(-1)
         rotated = torch.stack(
             (
