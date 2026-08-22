@@ -326,9 +326,56 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
+        # Move encoders to GPU only if they fit; keep large ones on CPU
+        _GPU_ENCODER_THRESHOLD_GIB = 15.0
         for enc in modules.encoders:
-            enc.to(self.device)
+            enc_size_gib = sum(
+                p.numel() * p.element_size() for p in enc.parameters()
+            ) / (1024**3)
+            if enc_size_gib > _GPU_ENCODER_THRESHOLD_GIB:
+                logger.info(
+                    "Encoder %s (%.1f GiB) exceeds GPU threshold (%.1f GiB),"
+                    " keeping on CPU",
+                    enc.__class__.__name__,
+                    enc_size_gib,
+                    _GPU_ENCODER_THRESHOLD_GIB,
+                )
+
+                # Register pre-forward hook to move inputs to CPU (encoder's device)
+                def _inputs_to_cpu(module, args, kwargs):
+                    new_args = tuple(
+                        a.to('cpu') if isinstance(a, torch.Tensor) else a
+                        for a in args
+                    )
+                    new_kwargs = {
+                        k: v.to('cpu') if isinstance(v, torch.Tensor) else v
+                        for k, v in kwargs.items()
+                    }
+                    return new_args, new_kwargs
+
+                enc.register_forward_pre_hook(_inputs_to_cpu, with_kwargs=True)
+
+                # Register hook to move output tensors to GPU after forward
+                def _output_to_device(module, input, output, device=self.device):
+                    if isinstance(output, torch.Tensor):
+                        return output.to(device)
+                    elif isinstance(output, (tuple, list)):
+                        return type(output)(
+                            o.to(device) if isinstance(o, torch.Tensor) else o
+                            for o in output
+                        )
+                    elif hasattr(output, 'hidden_states') and output.hidden_states is not None:
+                        output.hidden_states = tuple(
+                            h.to(device) if isinstance(h, torch.Tensor) else h
+                            for h in output.hidden_states
+                        )
+                        if hasattr(output, 'last_hidden_state') and output.last_hidden_state is not None:
+                            output.last_hidden_state = output.last_hidden_state.to(device)
+                    return output
+
+                enc.register_forward_hook(_output_to_device)
+            else:
+                enc.to(self.device)
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
