@@ -326,9 +326,38 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
-        for enc in modules.encoders:
-            enc.to(self.device)
+        # Check if encoders fit on GPU collectively
+        total_enc_bytes = sum(
+            sum(p.numel() * p.element_size() for p in enc.parameters())
+            for enc in modules.encoders
+        )
+        free_mem = current_omni_platform.get_free_memory()
+        if total_enc_bytes < free_mem * 0.85:
+            # Move encoders to GPU (they stay resident)
+            for enc in modules.encoders:
+                enc.to(self.device)
+        else:
+            logger.info(
+                "Encoder group (%.2f GiB) exceeds GPU budget (%.2f GiB free). "
+                "Using on-demand encoder offloading.",
+                total_enc_bytes / (1024**3),
+                free_mem / (1024**3),
+            )
+            from .sequential_backend import SequentialOffloadHook
+
+            for i, enc in enumerate(modules.encoders):
+                other_encs = [e for j, e in enumerate(modules.encoders) if j != i]
+                registry = HookRegistry.get_or_create(enc)
+                hook = SequentialOffloadHook(
+                    offload_targets=other_encs,
+                    device=self.device,
+                    pin_memory=self.config.pin_cpu_memory,
+                    use_hsdp=False,
+                )
+                registry.register_hook(SequentialOffloadHook._HOOK_NAME, hook)
+            # Move only the first encoder to GPU; others stay on CPU
+            if modules.encoders:
+                modules.encoders[0].to(self.device)
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
