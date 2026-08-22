@@ -326,9 +326,97 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
-        for enc in modules.encoders:
-            enc.to(self.device)
+        # Move encoders to GPU (they stay resident), or apply layerwise
+        # offload if the encoder is too large to fit in GPU memory.
+        for enc_name, enc in zip(modules.encoder_names, modules.encoders):
+            enc_size = sum(p.nbytes for p in enc.parameters()) + sum(
+                b.nbytes for b in enc.buffers()
+            )
+            try:
+                free_mem = current_omni_platform.get_free_memory()
+            except Exception:
+                free_mem = float("inf")
+
+            if enc_size > free_mem:
+                # Try layerwise offload on encoder blocks
+                blocks = self._discover_encoder_blocks(enc)
+                if blocks and len(blocks) > 1:
+                    # Move non-block children to GPU (small: embeddings, norms)
+                    block_parent, block_attr_name = self._encoder_block_parent_and_attr(enc)
+                    if block_parent is not None:
+                        for child_name, child in block_parent.named_children():
+                            if child_name != block_attr_name:
+                                child.to(self.device)
+                        for p in block_parent._parameters.values():
+                            if p is not None:
+                                p.data = p.data.to(self.device, non_blocking=True)
+                        for b in block_parent._buffers.values():
+                            if b is not None:
+                                b.data = b.data.to(self.device, non_blocking=True)
+                    # Move any top-level children of enc that are NOT ancestors of blocks
+                    # (e.g. enc has language_model -> model -> layers; move siblings of language_model)
+                    if block_parent is not enc:
+                        for child_name, child in enc.named_children():
+                            # Skip if this child is an ancestor of block_parent
+                            is_ancestor = any(m is block_parent for m in child.modules())
+                            if not is_ancestor:
+                                child.to(self.device)
+                        for p in enc._parameters.values():
+                            if p is not None:
+                                p.data = p.data.to(self.device, non_blocking=True)
+                        for b in enc._buffers.values():
+                            if b is not None:
+                                b.data = b.data.to(self.device, non_blocking=True)
+                        # Also move intermediate wrappers' own params/buffers
+                        # (e.g. language_model's own params, language_model.model's own params)
+                        self._move_intermediate_params_to_device(enc, block_parent)
+
+                    # Apply block hooks for streaming
+                    last_block, first_block = blocks[-1], blocks[0]
+                    last_hook = apply_block_hook(
+                        last_block,
+                        first_block,
+                        self.device,
+                        self.copy_stream,
+                        self.config.pin_cpu_memory,
+                    )
+                    last_hook.prefetch_layer(non_blocking=False)
+
+                    block_hooks: list[LayerwiseOffloadHook] = [last_hook]
+                    for i, block in enumerate(blocks[:-1]):
+                        next_block = blocks[(i + 1) % len(blocks)]
+                        hook = apply_block_hook(
+                            block,
+                            next_block,
+                            self.device,
+                            self.copy_stream,
+                            self.config.pin_cpu_memory,
+                        )
+                        block_hooks.append(hook)
+
+                    for i in range(len(block_hooks)):
+                        block_hooks[i]._prev_hook = block_hooks[i - 1]
+
+                    self._blocks.append(blocks)
+                    logger.info(
+                        "Encoder '%s' too large (%.2f GiB > %.2f GiB free), "
+                        "applied layerwise offload on %d blocks",
+                        enc_name,
+                        enc_size / (1024**3),
+                        free_mem / (1024**3),
+                        len(blocks),
+                    )
+                else:
+                    # No blocks found; try to move anyway (may OOM)
+                    logger.warning(
+                        "Encoder '%s' is %.2f GiB but no streamable blocks found; "
+                        "attempting full GPU placement",
+                        enc_name,
+                        enc_size / (1024**3),
+                    )
+                    enc.to(self.device)
+            else:
+                enc.to(self.device)
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
@@ -441,6 +529,96 @@ class LayerWiseOffloadBackend(OffloadBackend):
         self._blocks.clear()
         self.enabled = False
         logger.info("Layer-wise offloading disabled")
+
+    # ---- Encoder layerwise offload helpers ----
+
+    # Common dotted paths where encoder models store their block layers.
+    _ENCODER_BLOCK_SEARCH_PATHS = [
+        "language_model.model.layers",
+        "model.layers",
+        "layers",
+        "encoder.layers",
+        "transformer.layers",
+        "blocks",
+        "encoder.block",
+        "model.encoder.layers",
+    ]
+
+    def _discover_encoder_blocks(self, enc: nn.Module) -> list[nn.Module] | None:
+        """Find a streamable nn.ModuleList of blocks inside an encoder module.
+
+        Searches common attribute paths used by text/vision encoders.
+        Returns the list of block modules, or None if not found.
+        """
+        from operator import attrgetter
+
+        for attr_path in self._ENCODER_BLOCK_SEARCH_PATHS:
+            try:
+                candidate = attrgetter(attr_path)(enc)
+            except AttributeError:
+                continue
+            if isinstance(candidate, nn.ModuleList) and len(candidate) > 1:
+                # Store the successful path for later use
+                self._last_encoder_block_path = attr_path
+                return list(candidate)
+        return None
+
+    def _encoder_block_parent_and_attr(
+        self, enc: nn.Module
+    ) -> tuple[nn.Module | None, str | None]:
+        """Return (parent_module, attr_name) for the discovered block list.
+
+        E.g. for path 'language_model.model.layers', returns
+        (enc.language_model.model, 'layers').
+        """
+        from operator import attrgetter
+
+        attr_path = getattr(self, "_last_encoder_block_path", None)
+        if attr_path is None:
+            return None, None
+
+        parts = attr_path.split(".")
+        attr_name = parts[-1]
+        if len(parts) > 1:
+            parent_path = ".".join(parts[:-1])
+            try:
+                parent = attrgetter(parent_path)(enc)
+            except AttributeError:
+                return None, None
+        else:
+            parent = enc
+        return parent, attr_name
+
+    def _move_intermediate_params_to_device(
+        self, enc: nn.Module, block_parent: nn.Module
+    ) -> None:
+        """Move own parameters/buffers of intermediate wrapper modules to GPU.
+
+        For a path like enc.language_model.model.layers, this moves the own
+        params/buffers of enc.language_model and enc.language_model.model
+        (but NOT their children, which are handled separately).
+        """
+        from operator import attrgetter
+
+        attr_path = getattr(self, "_last_encoder_block_path", None)
+        if attr_path is None:
+            return
+
+        parts = attr_path.split(".")
+        # Walk intermediate modules (excluding the last part which is the blocks)
+        current = enc
+        for part in parts[:-1]:
+            try:
+                current = getattr(current, part)
+            except AttributeError:
+                break
+            # Move this intermediate module's own params/buffers (not children)
+            for p in current._parameters.values():
+                if p is not None:
+                    p.data = p.data.to(self.device, non_blocking=True)
+            for b in current._buffers.values():
+                if b is not None:
+                    b.data = b.data.to(self.device, non_blocking=True)
 
     @staticmethod
     def get_blocks_attr_names(model: nn.Module) -> list[str]:
