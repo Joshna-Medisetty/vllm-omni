@@ -15,6 +15,7 @@ from vllm_omni.platforms import current_omni_platform
 
 from .base import OffloadBackend, OffloadConfig
 from .module_collector import ModuleDiscovery
+from .offload_plan import get_offload_plan
 
 logger = init_logger(__name__)
 
@@ -326,8 +327,25 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
-        for enc in modules.encoders:
+        plan = get_offload_plan(pipeline)
+
+        # Move encoders to GPU (they stay resident), unless the pipeline's
+        # offload plan declares them as on-demand or block-streamable.
+        for enc, enc_name in zip(modules.encoders, modules.encoder_names):
+            if plan and (enc_name in plan.on_demand_component_paths or enc_name in plan.encoder_block_attrs):
+                # Try to apply block-level streaming hooks for the encoder
+                if self._try_layerwise_offload_encoder(enc, enc_name, plan):
+                    logger.info(
+                        "Enabled encoder block-level offload for %s (on-demand)",
+                        enc_name,
+                    )
+                else:
+                    logger.info(
+                        "Skipping enc.to(device) for on-demand encoder %s "
+                        "(pipeline handles loading)",
+                        enc_name,
+                    )
+                continue
             enc.to(self.device)
 
         # Move VAE(s) to GPU if available
@@ -429,6 +447,71 @@ class LayerWiseOffloadBackend(OffloadBackend):
 
         if len(self._blocks) > 0 and len(self._blocks[0]) > 0:
             self.enabled = True
+
+    def _try_layerwise_offload_encoder(
+        self, module: nn.Module, name: str, plan
+    ) -> bool:
+        """Stream plan-declared encoder blocks with layerwise hooks.
+
+        Mirrors the distributed backend's approach: if the plan declares
+        encoder_block_attrs for this encoder, apply block-level streaming
+        hooks so only one block is on GPU at a time.
+        """
+        if plan is None or name not in plan.encoder_block_attrs:
+            return False
+        if getattr(module, "_omni_layerwise_enabled", False):
+            return True
+
+        from operator import attrgetter
+
+        hooks = []
+        block_groups = []
+        copy_stream = current_omni_platform.Stream()
+        for block_path in plan.encoder_block_attrs[name]:
+            try:
+                blocks = attrgetter(block_path)(module)
+            except AttributeError:
+                logger.warning(
+                    "Encoder offload path %s.%s was not found", name, block_path
+                )
+                continue
+            if not isinstance(blocks, nn.ModuleList) or len(blocks) <= 1:
+                logger.warning(
+                    "Encoder offload path %s.%s is not a streamable block list",
+                    name,
+                    block_path,
+                )
+                continue
+            group_hooks = [
+                apply_block_hook(
+                    blocks[-1],
+                    blocks[0],
+                    self.device,
+                    copy_stream,
+                    self.config.pin_cpu_memory,
+                )
+            ]
+            group_hooks.extend(
+                apply_block_hook(
+                    block,
+                    blocks[index + 1],
+                    self.device,
+                    copy_stream,
+                    self.config.pin_cpu_memory,
+                )
+                for index, block in enumerate(blocks[:-1])
+            )
+            for index, hook in enumerate(group_hooks):
+                hook._prev_hook = group_hooks[index - 1]
+            hooks.extend(group_hooks)
+            block_groups.append(blocks)
+
+        if not hooks:
+            return False
+        module._omni_layerwise_hooks = hooks
+        module._omni_layerwise_block_groups = block_groups
+        module._omni_layerwise_enabled = True
+        return True
 
     def disable(self) -> None:
         if not self.enabled:
