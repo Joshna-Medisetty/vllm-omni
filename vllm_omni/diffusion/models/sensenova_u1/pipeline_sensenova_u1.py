@@ -465,10 +465,10 @@ class SenseNovaU1Pipeline(nn.Module, SupportsComponentDiscovery, DiffusionPipeli
     # CPU-offload protocol: language_model carries the denoising blocks; the
     # vision and FM modules are lightweight encoders pinned on GPU during the
     # diffusion loop. There is no separate VAE.
-    _dit_modules: ClassVar[list[str]] = ["language_model"]
+    _dit_modules: ClassVar[list[str]] = ["language_model.model"]
     _encoder_modules: ClassVar[list[str]] = ["vision_model"]
     _vae_modules: ClassVar[list[str]] = []
-    _resident_modules: ClassVar[list[str]] = ["fm_modules"]
+    _resident_modules: ClassVar[list[str]] = ["fm_modules", "language_model.lm_head"]
 
     # Top-level module(s) the diffusion LoRA manager scans (both MoT branches).
     # TODO: promote to a shared LoRA contract/mixin instead of per-pipeline opt-in.

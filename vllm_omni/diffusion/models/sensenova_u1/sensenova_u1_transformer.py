@@ -635,6 +635,8 @@ class SenseNovaU1DecoderLayer(nn.Module):
 
 
 class SenseNovaU1Model(nn.Module):
+    _layerwise_offload_blocks_attrs = ["layers"]
+
     _cache_dit_adapter_config = CacheDiTAdapterConfig(
         block_forward_patterns={
             "layers": ForwardPattern.Pattern_3,
