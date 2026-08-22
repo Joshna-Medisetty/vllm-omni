@@ -105,6 +105,9 @@ class SequentialOffloadHook(ModelHook):
         for target in self.offload_targets:
             self._to_cpu(target)
 
+        # Final cache flush to consolidate freed blocks before large allocation
+        current_omni_platform.empty_cache()
+
         # Load current module to GPU
         self._to_gpu(module)
         current_omni_platform.synchronize()
@@ -260,9 +263,11 @@ class ModelLevelOffloadBackend(OffloadBackend):
 
         modules = ModuleDiscovery.discover(pipeline)
 
-        # Move encoders to GPU
-        for enc in modules.encoders:
-            enc.to(self.device)
+        # Do NOT eagerly move encoders to GPU here. On XPU, moving all
+        # encoders to GPU and then freeing them in pre_forward causes
+        # allocator fragmentation that prevents the transformer from
+        # fitting. Leave encoders on CPU; their own pre_forward hooks
+        # will move them to GPU on demand.
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:

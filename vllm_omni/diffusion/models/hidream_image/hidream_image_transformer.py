@@ -672,6 +672,8 @@ class HiDreamBlock(nn.Module):
 
 
 class HiDreamImageTransformer2DModel(nn.Module):
+    _layerwise_offload_blocks_attrs = ["double_stream_blocks", "single_stream_blocks"]
+
     def __init__(
         self,
         od_config: OmniDiffusionConfig = None,

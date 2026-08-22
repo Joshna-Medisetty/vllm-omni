@@ -6,7 +6,7 @@ import json
 import math
 import os
 from collections.abc import Callable, Iterable
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import torch
@@ -145,6 +145,11 @@ def retrieve_timesteps(
 
 
 class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfilerMixin, ProgressBarMixin):
+    _dit_modules: ClassVar[list[str]] = ["transformer"]
+    _encoder_modules: ClassVar[list[str]] = ["text_encoder", "text_encoder_2", "text_encoder_3", "text_encoder_4"]
+    _vae_modules: ClassVar[list[str]] = ["vae"]
+    _resident_modules: ClassVar[list[str]] = []
+
     def __init__(
         self,
         *,
@@ -231,8 +236,10 @@ class HiDreamImagePipeline(nn.Module, CFGParallelMixin, DiffusionPipelineProfile
         self.tokenizer_3 = T5Tokenizer.from_pretrained(
             model, subfolder="tokenizer_3", local_files_only=local_files_only
         )
-        self.text_encoder_4 = LlamaForCausalLM.from_pretrained(llama_path, output_hidden_states=True, dtype=dtype).to(
-            self.device
+        # Do not move to GPU here; the sequential offload hook will
+        # handle device placement on demand.
+        self.text_encoder_4 = LlamaForCausalLM.from_pretrained(
+            llama_path, output_hidden_states=True, dtype=dtype
         )
         self.tokenizer_4 = PreTrainedTokenizerFast.from_pretrained(llama_path, use_fast=False)
         transformer_kwargs = get_transformer_config_kwargs(od_config.tf_model_config, HiDreamImageTransformer2DModel)

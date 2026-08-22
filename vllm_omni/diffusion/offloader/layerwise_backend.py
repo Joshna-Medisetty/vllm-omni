@@ -15,6 +15,7 @@ from vllm_omni.platforms import current_omni_platform
 
 from .base import OffloadBackend, OffloadConfig
 from .module_collector import ModuleDiscovery
+from .sequential_backend import apply_sequential_offload
 
 logger = init_logger(__name__)
 
@@ -326,9 +327,17 @@ class LayerWiseOffloadBackend(OffloadBackend):
             logger.warning("No DiT/transformer modules found, skipping layer-wise offloading")
             return
 
-        # Move encoders to GPU (they stay resident)
-        for enc in modules.encoders:
-            enc.to(self.device)
+        # Register sequential offload hooks on encoders so they swap with
+        # DiT on demand (moved to GPU only when called, back to CPU before
+        # denoising). This prevents all encoders (~26 GiB for HiDream)
+        # from staying permanently resident on GPU.
+        if modules.encoders:
+            apply_sequential_offload(
+                dit_modules=modules.dits,
+                encoder_modules=modules.encoders,
+                device=self.device,
+                pin_memory=self.config.pin_cpu_memory,
+            )
 
         # Move VAE(s) to GPU if available
         for vae in modules.vaes:
