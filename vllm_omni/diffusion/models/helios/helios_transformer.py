@@ -818,6 +818,13 @@ class HeliosTransformer3DModel(nn.Module):
         if not self._cache_enabled():
             return None
 
+        # Layer-wise offloading moves block weights to CPU; cannot pre-compute KV
+        # across all blocks. Fall back to inline per-block computation.
+        if len(self.blocks) > 0:
+            registry = getattr(self.blocks[0], "_hook_registry", None)
+            if registry is not None and registry.get_hook("layerwise_offload") is not None:
+                return None
+
         cache_key = self._tensor_cache_key(encoder_hidden_states)
         cached = self._get_from_lru(self._cross_attn_kv_cache, cache_key)
         if cached is not None:
