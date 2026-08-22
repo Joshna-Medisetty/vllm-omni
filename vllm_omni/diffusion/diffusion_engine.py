@@ -61,7 +61,7 @@ if TYPE_CHECKING:
 
 logger = init_logger(__name__)
 
-_ASYNC_OUTPUT_TIMEOUT = 30.0  # seconds
+_ASYNC_OUTPUT_TIMEOUT = 600.0  # seconds; video VAE decode + D2H can exceed 30s on XPU
 
 __all__ = [
     "DiffusionEngine",
