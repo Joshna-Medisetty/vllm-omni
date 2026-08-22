@@ -351,6 +351,7 @@ class FlashAttentionImpl(AttentionImpl):
         """XPU flash attention implementation."""
         from vllm_omni.diffusion.attention.backends.utils.fa import (
             HAS_FLASH_ATTN,
+            flash_attn_varlen_func,
         )
 
         if not HAS_FLASH_ATTN:
@@ -361,6 +362,24 @@ class FlashAttentionImpl(AttentionImpl):
             )
 
         attention_mask = attn_metadata.attn_mask if attn_metadata is not None else None
+        full_attn_spans = attn_metadata.full_attn_spans if attn_metadata is not None else None
+
+        # Piecewise attention for mixed causal/full masks (e.g. HiDream-O1)
+        if full_attn_spans is not None:
+            logger.debug("Using piecewise Flash Attention (XPU) for mixed causal/full mask")
+            attn_func = partial(
+                FlashAttentionImpl._flash_varlen_wrapper,
+                attn_func=flash_attn_varlen_func,
+            )
+            return piecewise_attn(
+                query,
+                key,
+                value,
+                full_attn_spans,
+                self.softmax_scale,
+                attn_func,
+                query_ranges=attn_metadata.query_ranges if attn_metadata else None,
+            )
 
         if attention_mask is not None and torch.any(~attention_mask):
             return self._forward_varlen_masked(
