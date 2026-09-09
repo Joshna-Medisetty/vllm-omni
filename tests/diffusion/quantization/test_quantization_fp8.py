@@ -300,9 +300,20 @@ def test_single_stage_zimage_fp8_uses_less_memory():
     assert mem_fp8 < mem_bf16, f"FP8 ({mem_fp8:.2f} GiB) should use less memory than BF16 ({mem_bf16:.2f} GiB)"
 
 
-@hardware_test(res={"cuda": "L4"})
+@hardware_test(res={"cuda": "L4", "xpu": "B60"})
+@pytest.mark.advanced_model
 def test_single_stage_qwen_image_fp8():
-    """Qwen-Image (random weights) with FP8 generates valid images."""
+    """Qwen-Image (random weights) with FP8 generates valid images.
+
+    On XPU this also guards the W8A16 FP8 kernel handing its rank-3 diffusion
+    activation straight to ``torch.ops._xpu_C.fp8_gemm_w8a16``, whose registered
+    fake returns 2-D: inductor baked in a 2-D ``assert_size_stride`` that the
+    rank-3 result tripped, so ``fp8`` aborted during startup warmup and never
+    produced an image. ``advanced_model`` is what puts this in the XPU CI job,
+    which selects ``core_model``/``advanced_model``/``omni`` but never the
+    module-level ``full_model``; the CUDA jobs only run this directory nightly
+    under ``full_model``, so their selection is unchanged.
+    """
     model = "riverclouds/qwen_image_random"
     if current_omni_platform.is_npu() or current_omni_platform.is_rocm():
         pytest.skip("qwen_image_random not available on this platform")
