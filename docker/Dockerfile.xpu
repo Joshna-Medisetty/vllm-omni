@@ -1,5 +1,5 @@
-# Target vLLM version: v0.29.0 (tag @ 98dff2a81d74). Keep VLLM_VERSION aligned
-# with docker/Dockerfile.ci VLLM_BASE_TAG on every rebase.
+# Target vLLM version: v0.29.0. Keep VLLM_VERSION aligned with the target vLLM
+# release on every rebase.
 #
 # This file layers vLLM-Omni on top of the published upstream XPU image, which
 # already ships a self-consistent XPU runtime (torch-xpu, oneCCL/UCX+NIXL, the
