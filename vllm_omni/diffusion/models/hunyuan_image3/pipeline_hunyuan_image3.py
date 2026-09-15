@@ -1037,7 +1037,7 @@ class HunyuanImage3Pipeline(
             if gen_image_slices is not None:
                 rows: list[torch.Tensor] = []
                 for row in range(bsz):
-                    row_slices = gen_image_slices[row] if row < len(gen_image_slices) else []
+                    row_slices = request_layout_utils.hunyuan_gen_image_row_slices(gen_image_slices, row)
                     if not row_slices:
                         raise ValueError("gen_image_slices must be set for the first denoise step")
                     row_parts = [x[row : row + 1, image_slice, :] for image_slice in row_slices]

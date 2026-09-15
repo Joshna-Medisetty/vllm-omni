@@ -210,6 +210,42 @@ def hunyuan_num_special_tokens(image_info: ImageInfo) -> int:
     )
 
 
+def hunyuan_gen_image_row_slices(
+    gen_image_slices: list[list[slice]] | list[slice] | None,
+    row: int,
+) -> list[slice]:
+    """Return the gen-image slice list for one batch row (handles bare ``slice``)."""
+
+    if gen_image_slices is None or row >= len(gen_image_slices):
+        return []
+    row_slices = gen_image_slices[row]
+    if isinstance(row_slices, slice):
+        return [row_slices]
+    return list(row_slices)
+
+
+def hunyuan_encoded_gen_image_token_length(
+    tokenizer_output: TokenizerEncodeOutput,
+    row: int,
+) -> int:
+    """Token count for the generated-image block on ``row``.
+
+    ``gen_image_mask`` can over-count when layout metadata and the encoded
+    sequence disagree; slice spans match what ``ragged_final_layer`` extracts.
+    """
+
+    mask_len = 0
+    if tokenizer_output.gen_image_mask is not None and row < tokenizer_output.gen_image_mask.shape[0]:
+        mask_len = int(tokenizer_output.gen_image_mask[row].sum().item())
+    row_slices = hunyuan_gen_image_row_slices(tokenizer_output.gen_image_slices, row)
+    slice_len = sum(int(image_slice.stop) - int(image_slice.start) for image_slice in row_slices)
+    if slice_len > 0:
+        if mask_len > 0 and slice_len != mask_len:
+            return slice_len
+        return slice_len
+    return mask_len
+
+
 def _factor_latent_token_grid(encoded_len: int, prefer_height: int, prefer_width: int) -> tuple[int, int]:
     """Pick token_height x token_width == encoded_len closest to the preferred aspect ratio."""
 
@@ -250,7 +286,7 @@ def sync_hunyuan_image_info_with_tokenizer_output(
     for row, image_info in enumerate(batch_gen_image_info):
         if row >= tokenizer_output.gen_image_mask.shape[0]:
             break
-        encoded_len = int(tokenizer_output.gen_image_mask[row].sum().item())
+        encoded_len = hunyuan_encoded_gen_image_token_length(tokenizer_output, row)
         if encoded_len <= 0:
             continue
         if encoded_len == image_info.image_token_length:

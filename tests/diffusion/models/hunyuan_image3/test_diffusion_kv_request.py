@@ -263,6 +263,31 @@ def test_passes_preprocessed_reference_image_geometry_to_tokenizer() -> None:
     assert kv_requests[0].kv_contexts == ()
 
 
+def test_sync_hunyuan_image_info_prefers_gen_image_slices_over_mask() -> None:
+    info = ImageInfo(
+        image_type="gen_image",
+        image_width=1024,
+        image_height=1024,
+        token_width=32,
+        token_height=32,
+        image_token_length=1024,
+    )
+    mask = torch.ones(1024, dtype=torch.bool)
+    output = TokenizerEncodeOutput(
+        tokens=torch.zeros(mask.shape[0], dtype=torch.long),
+        gen_image_mask=mask.unsqueeze(0),
+        gen_image_slices=[slice(100, 142)],
+    )
+    sync_hunyuan_image_info_with_tokenizer_output(
+        [info],
+        output,
+        vae_downsample_factor=(8, 8),
+        patch_size=2,
+    )
+    assert info.image_token_length == 42
+    assert info.token_height * info.token_width == 42
+
+
 def test_sync_hunyuan_image_info_with_truncated_gen_image_mask() -> None:
     info = ImageInfo(
         image_type="gen_image",
