@@ -256,6 +256,10 @@ def get_hunyuan_image_3_pre_process_func(od_config: OmniDiffusionConfig):
         raw_images = multi_modal_data.get("image")
         if raw_images is None:
             raw_images = prompt.get("pil_image")
+        # Startup dummy warmup must use text-to-image layout; placeholder PIL
+        # inputs are only for multimodal profiling, not joint-image tokenization.
+        if OmniDiffusionRequest.is_dummy_run_request_id(request.request_id):
+            raw_images = None
         has_images = raw_images is not None and (not isinstance(raw_images, list) or len(raw_images) > 0)
         if has_images:
             image_list = raw_images if isinstance(raw_images, list) else [raw_images]

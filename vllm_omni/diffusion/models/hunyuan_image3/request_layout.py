@@ -216,7 +216,11 @@ def hunyuan_gen_image_row_slices(
 ) -> list[slice]:
     """Return the gen-image slice list for one batch row (handles bare ``slice``)."""
 
-    if gen_image_slices is None or row >= len(gen_image_slices):
+    if gen_image_slices is None:
+        return []
+    if gen_image_slices and all(isinstance(entry, slice) for entry in gen_image_slices):
+        return list(gen_image_slices) if row == 0 else []
+    if row >= len(gen_image_slices):
         return []
     row_slices = gen_image_slices[row]
     if isinstance(row_slices, slice):
@@ -244,6 +248,24 @@ def hunyuan_encoded_gen_image_token_length(
             return slice_len
         return slice_len
     return mask_len
+
+
+def _sync_encoded_gen_image_token_length(
+    tokenizer_output: TokenizerEncodeOutput,
+    *,
+    image_info_row: int,
+    num_image_info_rows: int,
+) -> int:
+    """Pick the encoded gen-image length to drive latent geometry for ``image_info_row``."""
+
+    if tokenizer_output.gen_image_mask is None:
+        return hunyuan_encoded_gen_image_token_length(tokenizer_output, image_info_row)
+    num_token_rows = int(tokenizer_output.gen_image_mask.shape[0])
+    if num_image_info_rows == 1 and num_token_rows > 1:
+        row_lengths = [hunyuan_encoded_gen_image_token_length(tokenizer_output, row) for row in range(num_token_rows)]
+        positive_lengths = [length for length in row_lengths if length > 0]
+        return min(positive_lengths) if positive_lengths else 0
+    return hunyuan_encoded_gen_image_token_length(tokenizer_output, image_info_row)
 
 
 def _factor_latent_token_grid(encoded_len: int, prefer_height: int, prefer_width: int) -> tuple[int, int]:
@@ -283,10 +305,15 @@ def sync_hunyuan_image_info_with_tokenizer_output(
         return
     vae_h, vae_w = int(vae_downsample_factor[0]), int(vae_downsample_factor[1])
     patch = int(patch_size)
+    num_image_info_rows = len(batch_gen_image_info)
     for row, image_info in enumerate(batch_gen_image_info):
         if row >= tokenizer_output.gen_image_mask.shape[0]:
             break
-        encoded_len = hunyuan_encoded_gen_image_token_length(tokenizer_output, row)
+        encoded_len = _sync_encoded_gen_image_token_length(
+            tokenizer_output,
+            image_info_row=row,
+            num_image_info_rows=num_image_info_rows,
+        )
         if encoded_len <= 0:
             continue
         if encoded_len == image_info.image_token_length:
@@ -391,6 +418,12 @@ def prepare_hunyuan_layout(
         drop_think=getattr(generation_config, "drop_think", False),
     )
     tokenizer_output = result["output"]
+    sync_hunyuan_image_info_with_tokenizer_output(
+        [generated_image_info],
+        tokenizer_output,
+        vae_downsample_factor=image_processor.config.vae_downsample_factor,
+        patch_size=image_processor.config.patch_size,
+    )
     return HunyuanPreparedLayout(
         tokenizer_output=tokenizer_output,
         rope_image_info=build_hunyuan_batch_rope_image_info(tokenizer_output, result["sections"]),
