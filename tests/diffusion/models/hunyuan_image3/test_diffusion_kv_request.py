@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from types import SimpleNamespace
 
@@ -28,7 +28,7 @@ from vllm_omni.diffusion.models.hunyuan_image3.request_layout import (
     normalize_hunyuan_cot_text,
     prepare_hunyuan_layout,
 )
-from vllm_omni.diffusion.request import OmniDiffusionRequest
+from vllm_omni.diffusion.request import DUMMY_DIFFUSION_REQUEST_ID, OmniDiffusionRequest
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
@@ -88,7 +88,7 @@ class _FakeTokenizerWrapper:
                         "token_width": [2, 2],
                     }
                 )
-            row_sections.append({"type": "gen_image", "token_height": 4, "token_width": 4})
+            row_sections.append({"type": "gen_image", "token_height": [4], "token_width": [4]})
             sections.append(row_sections)
         return {
             "output": TokenizerEncodeOutput(
@@ -260,6 +260,24 @@ def test_passes_preprocessed_reference_image_geometry_to_tokenizer() -> None:
     assert kv_requests[0].target_len == 17
     assert kv_requests[0].seq_len == 40
     assert kv_requests[0].kv_contexts == ()
+
+
+def test_dummy_warmup_ignores_reference_image() -> None:
+    joint_image = _reference_image()
+    prompt = {
+        "prompt": "edit this image",
+        "additional_information": {"batch_cond_image_info": [joint_image]},
+    }
+    request = _request(guidance_scale=1.0, prompt=prompt, request_id=DUMMY_DIFFUSION_REQUEST_ID)
+
+    _, _, _, batch_cond_image_info, _ = extract_hunyuan_prompt_inputs(
+        [request.prompt],
+        request.sampling_params.extra_args or {},
+        request_id=request.request_id,
+        allow_cond_image=True,
+    )
+
+    assert batch_cond_image_info is None
 
 
 def _assert_nested_equal(actual, expected) -> None:

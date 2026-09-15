@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
 
 from __future__ import annotations
 
@@ -186,6 +186,12 @@ def extract_hunyuan_prompt_inputs(
             raise ValueError("When batching Hunyuan image editing requests, every prompt must include input image(s).")
         if not allow_cond_image or not any(has_cond_image):
             batch_cond_image_info = None
+
+    # Engine dummy warmup attaches a placeholder image for image-input-capable models.
+    # Hunyuan must tokenize that path as text-to-image so gen_image_mask spans the
+    # full latent grid (token_h * token_w) on the first denoise step.
+    if is_dummy_warmup:
+        batch_cond_image_info = None
 
     return prompt, cot_text_list, system_prompt, batch_cond_image_info, tokenizer_bot_task
 

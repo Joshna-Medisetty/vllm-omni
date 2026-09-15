@@ -257,6 +257,8 @@ def get_hunyuan_image_3_pre_process_func(od_config: OmniDiffusionConfig):
         if raw_images is None:
             raw_images = prompt.get("pil_image")
         has_images = raw_images is not None and (not isinstance(raw_images, list) or len(raw_images) > 0)
+        if has_images and request.is_dummy_run():
+            has_images = False
         if has_images:
             image_list = raw_images if isinstance(raw_images, list) else [raw_images]
             cond_image_infos = [_build_cond_joint_image(image) for image in image_list]
