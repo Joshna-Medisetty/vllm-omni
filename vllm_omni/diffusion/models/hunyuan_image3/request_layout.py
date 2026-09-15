@@ -187,12 +187,6 @@ def extract_hunyuan_prompt_inputs(
         if not allow_cond_image or not any(has_cond_image):
             batch_cond_image_info = None
 
-    # Engine dummy warmup attaches a placeholder image for image-input-capable models.
-    # Hunyuan must tokenize that path as text-to-image so gen_image_mask spans the
-    # full latent grid (token_h * token_w) on the first denoise step.
-    if is_dummy_warmup:
-        batch_cond_image_info = None
-
     return prompt, cot_text_list, system_prompt, batch_cond_image_info, tokenizer_bot_task
 
 
@@ -214,6 +208,61 @@ def hunyuan_num_special_tokens(image_info: ImageInfo) -> int:
     return (
         int(image_info.add_timestep_token) + int(image_info.add_guidance_token) + int(image_info.add_timestep_r_token)
     )
+
+
+def _factor_latent_token_grid(encoded_len: int, prefer_height: int, prefer_width: int) -> tuple[int, int]:
+    """Pick token_height x token_width == encoded_len closest to the preferred aspect ratio."""
+
+    if prefer_height > 0 and prefer_width > 0 and prefer_height * prefer_width == encoded_len:
+        return prefer_height, prefer_width
+    prefer_ratio = prefer_height / prefer_width if prefer_width > 0 else 1.0
+    best_height, best_width = 1, encoded_len
+    best_err = float("inf")
+    for height in range(1, int(encoded_len**0.5) + 1):
+        if encoded_len % height != 0:
+            continue
+        width = encoded_len // height
+        err = abs(height / width - prefer_ratio)
+        if err < best_err:
+            best_err = err
+            best_height, best_width = height, width
+    return best_height, best_width
+
+
+def sync_hunyuan_image_info_with_tokenizer_output(
+    batch_gen_image_info: list[ImageInfo],
+    tokenizer_output: TokenizerEncodeOutput,
+    *,
+    vae_downsample_factor: tuple[int, int] | list[int],
+    patch_size: int,
+) -> None:
+    """Align generated-image pixel + token geometry with the encoded prompt layout.
+
+    Tokenization can emit fewer ``<img>`` placeholders than ``ImageInfo`` planned
+    (for example when ``max_length`` clips the gen-image block). Latent noise and
+    ``patch_embed`` must follow the encoded grid, not the pre-encode plan.
+    """
+
+    if tokenizer_output.gen_image_mask is None:
+        return
+    vae_h, vae_w = int(vae_downsample_factor[0]), int(vae_downsample_factor[1])
+    patch = int(patch_size)
+    for row, image_info in enumerate(batch_gen_image_info):
+        if row >= tokenizer_output.gen_image_mask.shape[0]:
+            break
+        encoded_len = int(tokenizer_output.gen_image_mask[row].sum().item())
+        if encoded_len <= 0:
+            continue
+        if encoded_len == image_info.image_token_length:
+            continue
+        prefer_h = int(image_info.token_height or 0)
+        prefer_w = int(image_info.token_width or 0)
+        token_height, token_width = _factor_latent_token_grid(encoded_len, prefer_h, prefer_w)
+        image_info.token_height = token_height
+        image_info.token_width = token_width
+        image_info.image_token_length = encoded_len
+        image_info.image_height = token_height * vae_h * patch
+        image_info.image_width = token_width * vae_w * patch
 
 
 def hunyuan_cfg_factor(image_info: ImageInfo, guidance_scale: float) -> int:

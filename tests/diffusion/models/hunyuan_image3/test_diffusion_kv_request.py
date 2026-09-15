@@ -27,8 +27,9 @@ from vllm_omni.diffusion.models.hunyuan_image3.request_layout import (
     hunyuan_num_special_tokens,
     normalize_hunyuan_cot_text,
     prepare_hunyuan_layout,
+    sync_hunyuan_image_info_with_tokenizer_output,
 )
-from vllm_omni.diffusion.request import DUMMY_DIFFUSION_REQUEST_ID, OmniDiffusionRequest
+from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.inputs.data import OmniDiffusionSamplingParams
 
 pytestmark = [pytest.mark.core_model, pytest.mark.cpu, pytest.mark.diffusion]
@@ -262,22 +263,30 @@ def test_passes_preprocessed_reference_image_geometry_to_tokenizer() -> None:
     assert kv_requests[0].kv_contexts == ()
 
 
-def test_dummy_warmup_ignores_reference_image() -> None:
-    joint_image = _reference_image()
-    prompt = {
-        "prompt": "edit this image",
-        "additional_information": {"batch_cond_image_info": [joint_image]},
-    }
-    request = _request(guidance_scale=1.0, prompt=prompt, request_id=DUMMY_DIFFUSION_REQUEST_ID)
-
-    _, _, _, batch_cond_image_info, _ = extract_hunyuan_prompt_inputs(
-        [request.prompt],
-        request.sampling_params.extra_args or {},
-        request_id=request.request_id,
-        allow_cond_image=True,
+def test_sync_hunyuan_image_info_with_truncated_gen_image_mask() -> None:
+    info = ImageInfo(
+        image_type="gen_image",
+        image_width=512,
+        image_height=512,
+        token_width=32,
+        token_height=32,
     )
-
-    assert batch_cond_image_info is None
+    mask = torch.cat([torch.zeros(256, dtype=torch.bool), torch.ones(768, dtype=torch.bool)])
+    output = TokenizerEncodeOutput(
+        tokens=torch.zeros(mask.shape[0], dtype=torch.long),
+        gen_image_mask=mask.unsqueeze(0),
+        gen_image_slices=[[slice(256, 256 + 768)]],
+    )
+    sync_hunyuan_image_info_with_tokenizer_output(
+        [info],
+        output,
+        vae_downsample_factor=(8, 8),
+        patch_size=2,
+    )
+    assert info.image_token_length == 768
+    assert info.token_height * info.token_width == 768
+    assert info.image_height == info.token_height * 16
+    assert info.image_width == info.token_width * 16
 
 
 def _assert_nested_equal(actual, expected) -> None:

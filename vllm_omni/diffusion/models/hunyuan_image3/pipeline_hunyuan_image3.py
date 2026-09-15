@@ -257,8 +257,6 @@ def get_hunyuan_image_3_pre_process_func(od_config: OmniDiffusionConfig):
         if raw_images is None:
             raw_images = prompt.get("pil_image")
         has_images = raw_images is not None and (not isinstance(raw_images, list) or len(raw_images) > 0)
-        if has_images and request.is_dummy_run():
-            has_images = False
         if has_images:
             image_list = raw_images if isinstance(raw_images, list) else [raw_images]
             cond_image_infos = [_build_cond_joint_image(image) for image in image_list]
@@ -1022,12 +1020,38 @@ class HunyuanImage3Pipeline(
 
         return x
 
-    def ragged_final_layer(self, x, image_mask, timestep, token_h, token_w, first_step, num_special_tokens: int = None):
+    def ragged_final_layer(
+        self,
+        x,
+        image_mask,
+        timestep,
+        token_h,
+        token_w,
+        first_step,
+        num_special_tokens: int = None,
+        gen_image_slices: list[list[slice]] | list[slice] | None = None,
+    ):
         bsz, seq_len, n_embd = x.shape
+        latent_len = int(token_h) * int(token_w)
         if first_step:
-            image_output = x.masked_select(image_mask.unsqueeze(-1).bool()).reshape(bsz, -1, n_embd)
+            if gen_image_slices is not None:
+                rows: list[torch.Tensor] = []
+                for row in range(bsz):
+                    row_slices = gen_image_slices[row] if row < len(gen_image_slices) else []
+                    if not row_slices:
+                        raise ValueError("gen_image_slices must be set for the first denoise step")
+                    row_parts = [x[row : row + 1, image_slice, :] for image_slice in row_slices]
+                    rows.append(torch.cat(row_parts, dim=1))
+                image_output = torch.cat(rows, dim=0)
+            else:
+                image_output = x.masked_select(image_mask.unsqueeze(-1).bool()).reshape(bsz, -1, n_embd)
         else:
             image_output = x[:, num_special_tokens:, :]
+        if image_output.shape[1] != latent_len:
+            raise ValueError(
+                "Hunyuan generated-image hidden states do not match the latent patch grid: "
+                f"got {image_output.shape[1]} tokens, expected {latent_len} ({token_h}x{token_w})"
+            )
         timestep_emb = self.time_embed_2(timestep)
         pred = self.final_layer(image_output, timestep_emb, token_h, token_w)
         return pred
@@ -1279,6 +1303,14 @@ class HunyuanImage3Pipeline(
                     f"expected_rows={expected_rows}, prepared_branches={prepared_layout.num_branches}"
                 )
 
+        if mode == "gen_image" and batch_gen_image_info is not None:
+            request_layout_utils.sync_hunyuan_image_info_with_tokenizer_output(
+                batch_gen_image_info,
+                output,
+                vae_downsample_factor=self.hf_config.vae_downsample_factor,
+                patch_size=self.hf_config.patch_size,
+            )
+
         # 4. Encode conditional images
         # Skip encoding if AR KV reuse is enabled
         has_ar_kv = kwargs.get("ar_kv_data")
@@ -1465,6 +1497,9 @@ class HunyuanImage3Pipeline(
                 "num_special_tokens": kwargs.get("num_special_tokens"),
                 "ar_kv_reuse_len": kwargs.get("ar_kv_reuse_len", 0),
                 "full_attn_spans": kwargs.get("full_attn_spans"),
+                "gen_image_slices": (
+                    kwargs["tokenizer_output"].gen_image_slices if kwargs.get("tokenizer_output") is not None else None
+                ),
             }
         )
         return model_inputs
@@ -1643,6 +1678,7 @@ class HunyuanImage3Pipeline(
         uncond_cfg_prefill: bool = False,
         ar_kv_reuse_len: int = 0,
         full_attn_spans: list[list[tuple[int, int]]] | None = None,
+        gen_image_slices: list[list[slice]] | list[slice] | None = None,
         # for CFG distilled models
         guidance: torch.Tensor | None = None,
         guidance_scatter_index: torch.Tensor | None = None,
@@ -1785,7 +1821,14 @@ class HunyuanImage3Pipeline(
             )
             hidden_states = hidden_states.reshape(bsz, seq_len, n_embd)
             diffusion_prediction = self.ragged_final_layer(
-                hidden_states, image_mask, timestep, token_h, token_w, first_step, num_special_tokens
+                hidden_states,
+                image_mask,
+                timestep,
+                token_h,
+                token_w,
+                first_step,
+                num_special_tokens,
+                gen_image_slices,
             )
 
         if not return_dict:
