@@ -39,7 +39,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --height 320 \
   --width 576 \
   --num-frames 17 \
-  --tensor-parallel-size 1 \
   --enable-layerwise-offload \
   --enforce-eager \
   --flow-shift 12.0 \

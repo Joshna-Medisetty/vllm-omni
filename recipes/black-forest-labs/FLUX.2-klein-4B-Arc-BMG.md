@@ -34,7 +34,6 @@ python examples/offline_inference/image_to_image/image_edit.py \
   --num-inference-steps 28 \
   --guidance-scale 3.5 \
   --seed 42 \
-  --tensor-parallel-size 1 \
   --enable-cpu-offload \
   --enforce-eager \
   --output image_edit_output.png

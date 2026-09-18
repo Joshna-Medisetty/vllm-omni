@@ -34,7 +34,6 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --model krea/Krea-2-Turbo \
   --prompt "a fox in the snow" \
   --num-inference-steps 8 \
-  --tensor-parallel-size 1 \
   --enable-layerwise-offload \
   --enforce-eager \
   --output krea2_turbo_output.png

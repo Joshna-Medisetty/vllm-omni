@@ -38,7 +38,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --width 768 \
   --num-frames 81 \
   --fps 24 \
-  --tensor-parallel-size 1 \
   --enable-layerwise-offload \
   --vae-use-tiling \
   --enforce-eager \

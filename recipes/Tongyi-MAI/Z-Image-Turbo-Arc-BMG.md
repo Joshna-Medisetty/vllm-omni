@@ -22,8 +22,8 @@
 
 ### 1× Intel Arc BMG GPU (XPU)
 
-Qualification uses bf16 weights, module CPU offload, VAE tiling/slicing, and
-`--enforce-eager` on Intel XPU (Arc Pro B70 class, ~32 GiB free).
+Qualification uses bf16 weights, module CPU offload, and `--enforce-eager` on
+Intel XPU (~32 GiB free).
 
 #### Command
 
@@ -32,10 +32,7 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --model Tongyi-MAI/Z-Image-Turbo \
   --prompt "a cup of coffee on the table" \
   --num-inference-steps 25 \
-  --tensor-parallel-size 1 \
   --enable-cpu-offload \
-  --vae-use-tiling \
-  --vae-use-slicing \
   --enforce-eager \
   --output z_image_turbo_output.png
 ```
