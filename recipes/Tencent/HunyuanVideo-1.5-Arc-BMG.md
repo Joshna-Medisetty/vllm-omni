@@ -34,7 +34,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --enable-cpu-offload \
   --vae-use-tiling \
   --vae-use-slicing \
-  --tensor-parallel-size 1 \
   --num-inference-steps 50 \
   --guidance-scale 6.0 \
   --height 240 \

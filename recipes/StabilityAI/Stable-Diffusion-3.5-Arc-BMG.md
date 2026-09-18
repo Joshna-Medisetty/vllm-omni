@@ -23,8 +23,7 @@
 
 ### 1× Intel Arc BMG GPU (XPU)
 
-Uses bf16 weights, GPU-only on a single XPU with VAE tiling (28 steps in the
-validated run).
+Uses bf16 weights, GPU-only on a single XPU (28 steps in the validated run).
 
 #### Command
 
@@ -33,8 +32,6 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --model stabilityai/stable-diffusion-3.5-medium \
   --prompt "a sunset over mountains, photorealistic" \
   --num-inference-steps 28 \
-  --tensor-parallel-size 1 \
-  --vae-use-tiling \
   --output sd35_medium_output.png
 ```
 
