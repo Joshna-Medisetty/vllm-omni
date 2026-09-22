@@ -119,6 +119,7 @@ class AsyncOmni(AsyncOmniBase, EngineClient):
         trace_headers: Mapping[str, str] | None = None,
         priority: int = 0,
         data_parallel_rank: int | None = None,
+        session_id: str | None = None,
         reasoning_ended: bool | None = None,
         reasoning_parser_kwargs: dict[str, Any] | None = None,
         arrival_time: float | None = None,
@@ -128,6 +129,9 @@ class AsyncOmni(AsyncOmniBase, EngineClient):
         Coordinates multi-stage pipeline execution. Processes the prompt
         through all stages in the pipeline and yields outputs as they become
         available.
+
+        ``session_id`` is accepted for EngineClient protocol compatibility
+        and is not duplex-session plumbing.
 
         **Diffusion batching:**
         Diffusion stages accept only a single prompt per request.  Passing a
@@ -186,7 +190,7 @@ class AsyncOmni(AsyncOmniBase, EngineClient):
 
             # Reject diffusion list-prompt early with a clear API error.
             if isinstance(prompt, list) and any(
-                getattr(client, "stage_type", "") == "diffusion" for client in getattr(self.engine, "stage_clients", [])
+                stage_config.stage_type == "diffusion" for stage_config in self.engine.stage_configs
             ):
                 raise ValueError(
                     "Diffusion stages accept only a single prompt per request. "
@@ -626,7 +630,7 @@ class AsyncOmni(AsyncOmniBase, EngineClient):
 
     def _split_stage_ids_by_type(self, stage_ids: list[int] | None = None) -> tuple[list[int], list[int]]:
         """Split stage ids into AR/LLM (EngineCore) vs diffusion (worker RPC)."""
-        n_stages = len(self.engine.stage_clients)
+        n_stages = len(self.engine.stage_configs)
         if stage_ids is None:
             stage_ids = list(range(n_stages))
         else:
@@ -640,8 +644,8 @@ class AsyncOmni(AsyncOmniBase, EngineClient):
         ar_stage_ids: list[int] = []
         diffusion_stage_ids: list[int] = []
         for sid in stage_ids:
-            client = self.engine.stage_clients[sid]
-            if getattr(client, "stage_type", "llm") == "diffusion":
+            stage_config = self.engine.stage_configs[sid]
+            if stage_config.stage_type == "diffusion":
                 diffusion_stage_ids.append(sid)
             else:
                 ar_stage_ids.append(sid)
