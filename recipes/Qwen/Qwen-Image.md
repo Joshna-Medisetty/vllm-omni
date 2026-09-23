@@ -8,7 +8,7 @@
 - Model: `Qwen/Qwen-Image`
 - Task: Text-to-image generation
 - Mode: Online serving with optional step-wise continuous batching; offline
-  inference on Intel Arc BMG (XPU)
+  inference on Intel XPU
 - Maintainer: Community
 
 ## When to use this recipe
@@ -26,13 +26,13 @@ the benchmark assets already bundled in this repository.
   [`examples/online_serving/text_to_image/README.md`](../../examples/online_serving/text_to_image/README.md)
 - Related benchmark:
   [`benchmarks/diffusion/diffusion_benchmark_serving.py`](../../benchmarks/diffusion/diffusion_benchmark_serving.py)
-- Offline inference example used by the Intel Arc BMG section:
+- Offline inference example used by the XPU section:
   [`examples/offline_inference/text_to_image/text_to_image.py`](../../examples/offline_inference/text_to_image/text_to_image.py)
 
 ## Hardware Support
 
-This recipe documents CUDA GPU serving configurations and one Intel Arc BMG
-(XPU) offline-inference configuration. Extend it with more hardware sections as
+This recipe documents CUDA GPU serving configurations and one Intel XPU
+offline-inference configuration. Extend it with more hardware sections as
 community validation lands.
 
 ## GPU
@@ -240,20 +240,22 @@ CUTLASS was the fastest validated backend for this checkpoint.
   concurrency-1 request-level data; do not compare it directly with an online
   HTTP concurrency benchmark.
 
-### 1x Intel Arc BMG GPU (XPU)
+## XPU
+
+### 1x Intel Arc Pro B70 (32 GB)
+
+Offline text-to-image at 1024x1024, with layerwise offload streaming the
+transformer blocks so the 20B model fits one card.
 
 #### Environment
 
 - OS: Linux
 - Python: 3.10+
-- Driver / runtime: Intel XPU environment with one Arc BMG GPU (~32 GiB free)
-- vLLM version: Match the repository requirements for your checkout
-- vLLM-Omni version or commit: Use the commit you are deploying from
+- torch: 2.13.0+xpu
+- vLLM: 0.29.0 (`98dff2a8`)
+- vLLM-Omni: `main` at `4c7a98c2`
 
 #### Command
-
-This configuration runs the offline text-to-image example with bf16 weights and
-layerwise offload to stay inside a single-card memory budget:
 
 ```bash
 python examples/offline_inference/text_to_image/text_to_image.py \
@@ -261,6 +263,8 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --prompt "a cup of coffee on the table" \
   --num-inference-steps 50 \
   --enable-layerwise-offload \
+  --vae-use-tiling \
+  --vae-use-slicing \
   --enforce-eager \
   --output qwen_image_output.png
 ```
@@ -271,6 +275,7 @@ Confirm `qwen_image_output.png` is written and looks coherent for the prompt.
 
 #### Notes
 
-- `--enable-layerwise-offload` streams transformer blocks between host and
-  device, which is what keeps the 20B model inside a ~32 GiB card.
-- `--enforce-eager` skips graph capture, which is the validated path on XPU.
+- Memory usage: peak 16.6 GiB, about 55 s per image.
+- Known limitations: only offline generation was qualified. Step-wise continuous
+  batching, ModelOpt quantization, and online serving are out of scope for this
+  profile.

@@ -141,3 +141,43 @@ confirm a valid 1024×1024 PNG is written.
   no-CFG, True for Raw CFG).
 - Known limitations: TP / SP / CFG-Parallel are not yet wired for Krea 2. HSDP,
   layerwise CPU offload, and VAE-patch-parallel (decode) are supported.
+
+## XPU
+
+### 1x Intel Arc Pro B70 (32 GB)
+
+Offline text-to-image for the distilled Turbo checkpoint at 1024x1024, with
+layerwise offload streaming the transformer blocks.
+
+#### Environment
+
+- OS: Linux
+- Python: 3.10+
+- torch: 2.13.0+xpu
+- vLLM: 0.29.0 (`98dff2a8`)
+- vLLM-Omni: `main` at `4c7a98c2`
+
+#### Command
+
+```bash
+python examples/offline_inference/text_to_image/text_to_image.py \
+  --model krea/Krea-2-Turbo \
+  --prompt "a photo of a sunset over mountains" \
+  --height 1024 --width 1024 \
+  --num-inference-steps 8 \
+  --enable-layerwise-offload \
+  --vae-use-tiling \
+  --enforce-eager \
+  --output krea2_turbo_output.png
+```
+
+#### Verification
+
+Confirm `krea2_turbo_output.png` is written as a 1024x1024 PNG matching the
+prompt.
+
+#### Notes
+
+- Memory usage: 7.8 GiB loaded, 12.3 GiB peak, about 26 s per image.
+- Known limitations: only offline Turbo generation was qualified. Krea-2-Raw,
+  LoRA, Cache-DiT, and online serving are out of scope for this profile.
