@@ -8,7 +8,7 @@
 - Model: `Qwen/Qwen-Image`
 - Task: Text-to-image generation
 - Mode: Online serving with optional step-wise continuous batching; offline
-  inference on Intel XPU
+  inference
 - Maintainer: Community
 
 ## When to use this recipe

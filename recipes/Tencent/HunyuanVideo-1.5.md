@@ -1,6 +1,6 @@
 # HunyuanVideo 1.5
 
-> Offline text-to-video with the HunyuanVideo-1.5 Diffusers checkpoints
+> Text-to-video with the HunyuanVideo-1.5 Diffusers checkpoints
 
 ## Summary
 
@@ -12,8 +12,8 @@
 
 ## When to use this recipe
 
-Use this recipe to generate a short clip with HunyuanVideo-1.5 on a single
-32 GB Intel Arc card, trading output size for capacity.
+Use this recipe to generate a short clip with HunyuanVideo-1.5 on a memory-
+constrained card, trading output size for capacity.
 
 ## References
 
@@ -25,6 +25,9 @@ Use this recipe to generate a short clip with HunyuanVideo-1.5 on a single
   [`docs/user_guide/diffusion/cpu_offload.md`](../../docs/user_guide/diffusion/cpu_offload.md)
 
 ## Hardware Support
+
+This recipe documents one validated Intel XPU configuration. Extend it with
+more hardware sections as community validation lands.
 
 ## XPU
 

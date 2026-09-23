@@ -1,6 +1,6 @@
 # FLUX.2-klein
 
-> Offline text-guided image editing with `black-forest-labs/FLUX.2-klein-4B`
+> Text-guided image editing with `black-forest-labs/FLUX.2-klein-4B`
 
 ## Summary
 
@@ -12,8 +12,8 @@
 
 ## When to use this recipe
 
-Use this recipe to run single-image edits with FLUX.2-klein-4B on one 32 GB
-Intel Arc card.
+Use this recipe to run single-image edits with FLUX.2-klein-4B through the
+shared offline image-edit example.
 
 ## References
 
@@ -24,6 +24,9 @@ Intel Arc card.
   [`docs/user_guide/diffusion/cpu_offload.md`](../../docs/user_guide/diffusion/cpu_offload.md)
 
 ## Hardware Support
+
+This recipe documents one validated Intel XPU configuration. Extend it with
+more hardware sections as community validation lands.
 
 ## XPU
 

@@ -1,6 +1,6 @@
 # Z-Image Turbo
 
-> Offline few-step text-to-image with `Tongyi-MAI/Z-Image-Turbo`
+> Few-step text-to-image with `Tongyi-MAI/Z-Image-Turbo`
 
 ## Summary
 
@@ -13,7 +13,7 @@
 ## When to use this recipe
 
 Use this recipe to generate 1024x1024 images with the distilled Z-Image Turbo
-checkpoint on one 32 GB Intel Arc card.
+checkpoint through the shared offline text-to-image example.
 
 ## References
 
@@ -24,6 +24,9 @@ checkpoint on one 32 GB Intel Arc card.
   [`docs/user_guide/diffusion/cpu_offload.md`](../../docs/user_guide/diffusion/cpu_offload.md)
 
 ## Hardware Support
+
+This recipe documents one validated Intel XPU configuration. Extend it with
+more hardware sections as community validation lands.
 
 ## XPU
 
