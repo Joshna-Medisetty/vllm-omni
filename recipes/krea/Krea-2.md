@@ -180,7 +180,7 @@ further.
   --enable-cpu-offload
 ```
 
-| Offload | Cards | Peak | Time |
+| Offload | Cards | Peak VRAM | Time |
 | --- | ---: | ---: | ---: |
 | `--enable-layerwise-offload` | 1 | 12.3 GiB | 27 s |
 | `--enable-cpu-offload` | 2 | 25.6 GiB | 59 s |

@@ -278,7 +278,7 @@ per-request model swap costs more than the loop saves.
   --enable-cpu-offload
 ```
 
-| Offload | Cards | Peak | Time |
+| Offload | Cards | Peak VRAM | Time |
 | --- | ---: | ---: | ---: |
 | `--enable-layerwise-offload` | 1 | 16.6 GiB | 50 s |
 | `--enable-cpu-offload` | 2 | 26.4 GiB | 85 s |

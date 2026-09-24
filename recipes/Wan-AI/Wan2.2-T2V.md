@@ -137,7 +137,7 @@ fastest count; eight is slower.
   --enable-cpu-offload
 ```
 
-| Offload | Cards | Peak | Denoise |
+| Offload | Cards | Peak VRAM | Denoise |
 | --- | ---: | ---: | ---: |
 | `--enable-layerwise-offload` | 1 | 9.9 GiB | 160 s |
 | `--enable-cpu-offload` | 2 | 18.9 GiB | 113 s |
