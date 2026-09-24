@@ -269,6 +269,22 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --output qwen_image_output.png
 ```
 
+Given spare cards, `--enable-cpu-offload` shards the transformer instead of
+streaming it. It shortens the denoise loop but not the run, because the
+per-request model swap costs more than the loop saves.
+
+```bash
+  --tensor-parallel-size 4 \
+  --enable-cpu-offload
+```
+
+| Offload | Cards | Peak | Time |
+| --- | ---: | ---: | ---: |
+| `--enable-layerwise-offload` | 1 | 16.6 GiB | 50 s |
+| `--enable-cpu-offload` | 2 | 26.4 GiB | 85 s |
+| `--enable-cpu-offload` | 4 | 19.8 GiB | 70 s |
+| `--enable-cpu-offload` | 8 | 16.9 GiB | 87 s |
+
 #### Verification
 
 Confirm `qwen_image_output.png` is written and looks coherent for the prompt.

@@ -128,6 +128,21 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --output wan22_t2v_output.mp4
 ```
 
+Given spare cards, `--enable-cpu-offload` shards the two expert transformers
+instead of streaming them, which nearly halves the denoise loop. Four is the
+fastest count; eight is slower.
+
+```bash
+  --tensor-parallel-size 4 \
+  --enable-cpu-offload
+```
+
+| Offload | Cards | Peak | Denoise |
+| --- | ---: | ---: | ---: |
+| `--enable-layerwise-offload` | 1 | 9.9 GiB | 160 s |
+| `--enable-cpu-offload` | 2 | 18.9 GiB | 113 s |
+| `--enable-cpu-offload` | 4 | 12.4 GiB | 86 s |
+
 #### Verification
 
 Confirm `wan22_t2v_output.mp4` decodes and that frame 0 is clean.

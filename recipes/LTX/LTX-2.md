@@ -224,6 +224,9 @@ frames match the prompt.
 
 - `rootonchair/LTX-2-19b-distilled` was qualified separately with
   `--enable-cpu-offload` at 41 frames, peaking at 31.3 GiB.
+- `--enable-cpu-offload` is not an alternative here, with or without extra
+  cards: it keeps the VAE set resident, and tensor parallelism replicates the
+  text encoder per rank. TP=2, 4, and 8 all exhaust device memory.
 - Known limitations: only one-stage T2V was qualified. Two-stage, I2V, and
   online serving remain out of scope for this profile.
 

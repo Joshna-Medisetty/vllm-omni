@@ -171,6 +171,21 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --output krea2_turbo_output.png
 ```
 
+Given spare cards, `--enable-cpu-offload` replaces layerwise streaming. At 8
+steps the swap dominates the run, and cards past the second shard nothing
+further.
+
+```bash
+  --tensor-parallel-size 2 \
+  --enable-cpu-offload
+```
+
+| Offload | Cards | Peak | Time |
+| --- | ---: | ---: | ---: |
+| `--enable-layerwise-offload` | 1 | 12.3 GiB | 27 s |
+| `--enable-cpu-offload` | 2 | 25.6 GiB | 59 s |
+| `--enable-cpu-offload` | 4 | 25.6 GiB | 59 s |
+
 #### Verification
 
 Confirm `krea2_turbo_output.png` is written as a 1024x1024 PNG matching the
