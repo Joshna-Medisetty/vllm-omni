@@ -161,9 +161,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
 Peaks at 16.3 GiB in 163 s. Two-stage, distilled, and I2V paths were not
 exercised on this hardware.
 
-`--enable-cpu-offload` is not an alternative: it leaves the 23 GiB Gemma-4 text
-encoder resident on every rank, so extra cards do not make it fit.
-
 ## Offline inference
 
 Choose values from the pipeline table. For example, the distilled two-stage
