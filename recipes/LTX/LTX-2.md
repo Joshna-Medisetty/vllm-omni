@@ -220,10 +220,7 @@ because their preset defaults to 1536x1024:
 Each command writes its `--output` MP4. Confirm it decodes and that the sampled
 frames match the prompt.
 
-#### Notes
 
-- Known limitations: only one-stage T2V was qualified. Two-stage, I2V, and
-  online serving remain out of scope for this profile.
 
 ## Guidance
 
