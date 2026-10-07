@@ -36,8 +36,15 @@ platforms:
   xpu:
     stages:
       - stage_id: 0
-        # TP=4 puts ~26 GiB of BF16 weights on each 32 GiB card and OOMs.
+        # BF16 stays ~26 GiB per card even at TP=8. FP8 halves that.
         devices: "0,1,2,3,4,5,6,7"
         tensor_parallel_size: 8
+        quantization: fp8
+        max_num_batched_tokens: 4096
+        max_model_len: 8192
         enforce_eager: true
         skip_mm_profiling: true
+        limit_mm_per_prompt:
+          image: 1
+          video: 0
+          audio: 1
