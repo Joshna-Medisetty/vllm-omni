@@ -78,3 +78,11 @@ stages:
       max_tokens: 65536
       seed: 42
       repetition_penalty: 1.0
+
+platforms:
+  xpu:
+    stages:
+      - stage_id: 0
+        # Fast-AR sampling (torch.rand / Gumbel argmax) replays a stale RNG
+        # inside an XPU graph and the talker hums. Keep Stage 0 eager on XPU.
+        enforce_eager: true
