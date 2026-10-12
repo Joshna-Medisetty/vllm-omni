@@ -37,7 +37,6 @@ from vllm.sequence import IntermediateTensors
 from vllm.v1.outputs import SamplerOutput
 
 from vllm_omni.model_executor.models.output_templates import OmniOutput
-from vllm_omni.platforms import current_omni_platform
 from vllm_omni.utils.speaker_cache import get_speaker_cache
 
 from .audio8_tts_fast_ar import Audio8TTSFastAR
@@ -169,9 +168,7 @@ class Audio8TTSSlowARForConditionalGeneration(nn.Module):
         self.mtp_hidden_size = int(self.text_config.hidden_size)
         self.talker_mtp_output_key = ("codes", "audio")
         self.gpu_resident_buffer_keys: set[tuple[str, str]] = {("hidden_states", "last")}
-        # Fast-AR random sampling does not replay its RNG inside an XPU/NPU
-        # graph. Mirrors fish_speech / moss_tts.
-        self.talker_mtp_graph_safe = not (current_omni_platform.is_npu() or current_omni_platform.is_xpu())
+        self.talker_mtp_graph_safe = True
 
         self.model = Qwen2Model(vllm_config=vllm_config, prefix=maybe_prefix(prefix, "model"))
         self._fix_rope_style()
