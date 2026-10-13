@@ -555,7 +555,7 @@ class Magi2Pipeline(
 
         self.od_config = od_config
         self.dtype = od_config.dtype or torch.bfloat16
-        self.device_str = str(current_omni_platform.get_torch_device(torch.accelerator.current_device_index()))
+        self.device_str = f"{current_omni_platform.device_type}:{torch.accelerator.current_device_index()}"
         self.checkpoint_root = _resolve_checkpoint_root(
             str(od_config.model),
             od_config.revision,
@@ -1088,7 +1088,7 @@ class Magi2Pipeline(
         device_index = torch.accelerator.current_device_index() if on_accelerator else None
         # Sampling reserved memory is qualification instrumentation, not part
         # of ordinary serving. It starts only when the pipeline profiler is
-        # explicitly enabled, so every CUDA request avoids a 20 Hz thread.
+        # explicitly enabled, so ordinary GPU requests avoid a 20 Hz thread.
         monitor = (
             _PeakReservedMonitor(device_index)
             if device_index is not None and getattr(self, "enable_diffusion_pipeline_profiler", False)
