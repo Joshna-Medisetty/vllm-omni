@@ -390,7 +390,7 @@ class BreezeDepthGraph:
             )
         current_omni_platform.synchronize()
         self.graph = None
-        if current_omni_platform.is_cuda():
+        if current_platform.is_cuda_alike():
             self.graph = torch.cuda.CUDAGraph()
             if self.noise_generators is not None:
                 for generator in self.noise_generators:

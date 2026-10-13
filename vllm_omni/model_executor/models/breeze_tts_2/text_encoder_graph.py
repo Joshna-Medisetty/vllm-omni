@@ -82,7 +82,7 @@ class BreezeTextEncoderGraph:
             self._encode(encoder, projection)
         current_omni_platform.synchronize()
         self.graph = None
-        if current_omni_platform.is_cuda():
+        if current_platform.is_cuda_alike():
             self.graph = torch.cuda.CUDAGraph()
             with torch.cuda.graph(
                 self.graph, pool=current_platform.get_global_graph_pool(), capture_error_mode="thread_local"
