@@ -873,7 +873,12 @@ class MiMoAudioLLMForConditionalGeneration(nn.Module, SupportsMultiModal, Suppor
         local_sampler: MiMoSampler | MiMoLocalSamplerTensor | None = None,
     ):
         if tokens_device is None:
-            tokens_device = local_embeds.device
+            device_type = current_omni_platform.device_type
+            tokens_device = (
+                torch.device(device_type, torch.accelerator.current_device_index())
+                if device_type != "cpu" and current_omni_platform.is_available()
+                else torch.device("cpu")
+            )
         B = local_embeds.shape[0]
         delay_iters = self.group_size + max(self.delay_pattern)
 
