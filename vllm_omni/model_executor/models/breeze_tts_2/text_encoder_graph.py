@@ -10,6 +10,7 @@ from transformers.models.t5gemma2.modeling_t5gemma2 import (
     T5Gemma2TextEncoder,
     sliding_window_mask_function,
 )
+from vllm.platforms import current_platform
 
 from vllm_omni.platforms import current_omni_platform
 
@@ -80,7 +81,13 @@ class BreezeTextEncoderGraph:
         for _ in range(3):
             self._encode(encoder, projection)
         current_omni_platform.synchronize()
-        self.graph = current_omni_platform.capture_cuda_graph(self._run)
+        self.graph = None
+        if current_platform.is_cuda_alike():
+            self.graph = torch.cuda.CUDAGraph()
+            with torch.cuda.graph(
+                self.graph, pool=current_platform.get_global_graph_pool(), capture_error_mode="thread_local"
+            ):
+                self.output = self._encode(encoder, projection)
 
     def _encode(self, encoder: T5Gemma2TextEncoder, projection: nn.Linear) -> torch.Tensor:
         embedding = encoder.embed_tokens
@@ -116,7 +123,7 @@ class BreezeTextEncoderGraph:
         self.full_mask.masked_fill_(invalid, torch.finfo(self.full_mask.dtype).min)
         self.local_mask.copy_(self.local_mask_base)
         self.local_mask.masked_fill_(invalid, torch.finfo(self.local_mask.dtype).min)
-        current_omni_platform.replay_cuda_graph(self.graph, self._run)
+        current_omni_platform.replay_graph(self.graph, self._run)
         # Subsequent prefills and backbone/depth graphs reuse graph storage.
         # The runner must receive independently owned prompt embeddings.
         return [self.output[row, :length].clone() for row, length in enumerate(lengths)]
