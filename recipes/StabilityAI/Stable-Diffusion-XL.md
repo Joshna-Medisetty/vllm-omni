@@ -33,15 +33,11 @@ adherence. It requires ~6.5 GiB for model weights and runs inference at
 
 #### Environment
 
-- OS: Linux
-- Python: 3.10+
 - Driver / runtime: Intel XPU environment with Intel Arc BMG GPU
-- vLLM version: Match the repository requirements for your checkout
-- vLLM-Omni version or commit: Use the commit you are deploying from
 
 #### Command
 
-**Offline inference:**
+**Without CFG:**
 
 ```bash
 python examples/offline_inference/text_to_image/text_to_image.py \
@@ -52,6 +48,22 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --guidance-scale 7.5 \
   --seed 42 \
   --output sdxl_output.png
+```
+
+**With CFG:**
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+python examples/offline_inference/text_to_image/text_to_image.py \
+  --model stabilityai/stable-diffusion-xl-base-1.0 \
+  --negative-prompt "blurry, low quality" \
+  --num-inference-steps 4 \
+  --guidance-scale 7.5 \
+  --cfg-parallel-size 2 \
+  --enable-cpu-offload \
+  --enforce-eager \
+  --seed 42 \
+  --output sdxl_cfg2.png
 ```
 
 **Online serving:**

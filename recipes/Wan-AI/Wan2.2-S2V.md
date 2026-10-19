@@ -114,12 +114,7 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
 
 #### Environment
 
-- OS: Linux
-- Python: 3.10+
-- torch: 2.11.0+xpu
 - triton-xpu: 3.7.0
-- vLLM version: Match the repository requirements for your checkout
-- vLLM-Omni version or commit: Use the commit you are deploying from
 
 #### Prerequisites
 
@@ -170,6 +165,26 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
   --output s2v_720p_tp4_cfg2_offload.mp4
 ```
 
+**With CFG:**
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+python examples/offline_inference/speech_to_video/speech_to_video.py \
+  --model Wan-AI/Wan2.2-S2V-14B \
+  --image test_reference.png \
+  --audio vllm_omni/model_executor/models/step_audio2/assets/default_female.wav \
+  --prompt "A person talking to the camera, lips moving in sync with speech" \
+  --negative-prompt "blurry, noisy, artifacts, distorted, low quality" \
+  --tensor-parallel-size 2 \
+  --cfg-parallel-size 2 \
+  --enable-cpu-offload \
+  --vae-use-tiling \
+  --vae-use-slicing \
+  --height 448 --width 832 \
+  --num-frames 16 \
+  --num-inference-steps 2 \
+  --output wan22_s2v_cfg2.mp4
+```
 
 ### Online Serving
 

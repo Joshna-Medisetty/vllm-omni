@@ -93,6 +93,49 @@ parallelism at `--usp 4` so the two CFG branches cover all 8 GPUs.
   reduced the measured diffusion stage by about `65 ms` at
   `832x480, 81 frames` and about `741 ms` at `1280x720, 121 frames`.
 
+## XPU
+
+### Intel Arc Pro B70 (32 GB)
+
+#### Command
+
+**Without CFG:**
+
+```bash
+python examples/offline_inference/image_to_video/image_to_video.py \
+  --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+  --image test_input.jpg \
+  --prompt "A cherry blossom tree swaying gently in the wind" \
+  --num-inference-steps 15 \
+  --num-frames 9 \
+  --height 320 \
+  --width 576 \
+  --enable-cpu-offload \
+  --vae-use-tiling \
+  --enforce-eager \
+  --output i2v_output.mp4
+```
+
+**With CFG:**
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+python examples/offline_inference/image_to_video/image_to_video.py \
+  --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
+  --image test_input.jpg \
+  --prompt "A cherry blossom tree swaying gently in the wind" \
+  --negative-prompt "blurry, noisy, artifacts, distorted, low quality" \
+  --num-inference-steps 2 \
+  --num-frames 9 \
+  --height 320 \
+  --width 576 \
+  --cfg-parallel-size 2 \
+  --enable-cpu-offload \
+  --vae-use-tiling \
+  --enforce-eager \
+  --output wan22_i2v_cfg2.mp4
+```
+
 ## NPU
 
 ### 8x Ascend A2 / A3
