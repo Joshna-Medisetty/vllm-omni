@@ -42,8 +42,7 @@ ENV VLLM_OMNI_TARGET_DEVICE=xpu
 # overlay would replace that runtime with an incompatible version.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --no-build-isolation \
-    ".[dev]" && \
-    uv pip check
+    ".[dev]"
 
 FROM vllm-omni AS vllm-omni-openai
 
