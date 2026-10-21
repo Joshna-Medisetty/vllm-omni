@@ -119,21 +119,28 @@ python examples/offline_inference/image_to_video/image_to_video.py \
 **With CFG:**
 
 ```bash
+wget -O i2v_input.JPG \
+  "https://raw.githubusercontent.com/Wan-Video/Wan2.2/main/examples/i2v_input.JPG"
+```
+
+```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
 python examples/offline_inference/image_to_video/image_to_video.py \
   --model Wan-AI/Wan2.2-I2V-A14B-Diffusers \
-  --image test_input.jpg \
-  --prompt "A cherry blossom tree swaying gently in the wind" \
+  --image i2v_input.JPG \
+  --prompt "A cat wearing sunglasses rides a surfboard as the ocean water moves" \
   --negative-prompt "blurry, noisy, artifacts, distorted, low quality" \
-  --num-inference-steps 2 \
-  --num-frames 9 \
-  --height 320 \
-  --width 576 \
+  --num-inference-steps 40 \
+  --num-frames 33 \
+  --height 480 \
+  --width 832 \
+  --tensor-parallel-size 2 \
   --cfg-parallel-size 2 \
   --enable-cpu-offload \
   --vae-use-tiling \
+  --vae-use-slicing \
   --enforce-eager \
-  --output wan22_i2v_cfg2.mp4
+  --output wan22_i2v_cfg2_q40.mp4
 ```
 
 ## NPU

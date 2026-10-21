@@ -138,12 +138,11 @@ VLLM_WORKER_MULTIPROC_METHOD=spawn \
 python examples/offline_inference/text_to_video/text_to_video.py \
   --model Wan-AI/Wan2.2-T2V-A14B-Diffusers \
   --negative-prompt "blurry, noisy, artifacts, distorted, low quality, streaks, sparkles, blocky, pixelated" \
-  --num-inference-steps 2 \
   --guidance-scale 3.0 \
   --guidance-scale-high 4.0 \
   --height 480 \
   --width 832 \
-  --num-frames 17 \
+  --num-frames 33 \
   --tensor-parallel-size 2 \
   --cfg-parallel-size 2 \
   --enable-cpu-offload \
@@ -151,7 +150,7 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --flow-shift 12.0 \
   --vae-use-slicing \
   --fps 16 \
-  --output wan22_t2v_cfg2.mp4
+  --output wan22_t2v_cfg2_q40.mp4
 ```
 
 | Offload | Cards | Peak VRAM | Denoise |

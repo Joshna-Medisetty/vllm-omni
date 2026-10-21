@@ -57,13 +57,13 @@ VLLM_WORKER_MULTIPROC_METHOD=spawn \
 python examples/offline_inference/text_to_image/text_to_image.py \
   --model stabilityai/stable-diffusion-xl-base-1.0 \
   --negative-prompt "blurry, low quality" \
-  --num-inference-steps 4 \
+  --num-inference-steps 30 \
   --guidance-scale 7.5 \
   --cfg-parallel-size 2 \
   --enable-cpu-offload \
   --enforce-eager \
   --seed 42 \
-  --output sdxl_cfg2.png
+  --output sdxl_cfg2_q30.png
 ```
 
 **Online serving:**
