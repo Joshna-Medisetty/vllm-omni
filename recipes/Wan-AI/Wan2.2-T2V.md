@@ -131,7 +131,33 @@ fastest count; eight is slower.
   --enable-cpu-offload
 ```
 
-**With CFG:**
+| Offload | Cards | Peak VRAM | Denoise |
+| --- | ---: | ---: | ---: |
+| `--enable-layerwise-offload` | 1 | 9.9 GiB | 160 s |
+| `--enable-cpu-offload` | 2 | 18.9 GiB | 113 s |
+| `--enable-cpu-offload` | 4 | 12.4 GiB | 86 s |
+
+#### Verification
+
+Confirm `wan22_t2v_output.mp4` decodes and that frame 0 is clean.
+
+#### Notes
+
+- Key flags: `--boundary-ratio 0.875` sets the high-noise to low-noise expert
+  switch. `--flow-shift 5.0` with `--guidance-scale 4.0` over 60 steps clears
+  the frame-0 VAE corruption seen at the stock 50-step, `flow_shift=12.0`
+  settings.
+- Known limitations: this 1× profile qualified only offline T2V at 576×320.
+  Larger shapes and CFG parallel are the 4× profile below. TI2V, HSDP, and
+  online serving are out of scope.
+
+### 4x Intel Arc Pro B70 (32 GB)
+
+Verified separately from the 1× 576×320 run. `--tensor-parallel-size 2` and
+`--cfg-parallel-size 2` multiply to a world size of 4. This run is 832×480,
+33 frames.
+
+#### Command
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -152,26 +178,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --fps 16 \
   --output wan22_t2v_cfg2_q40.mp4
 ```
-
-| Offload | Cards | Peak VRAM | Denoise |
-| --- | ---: | ---: | ---: |
-| `--enable-layerwise-offload` | 1 | 9.9 GiB | 160 s |
-| `--enable-cpu-offload` | 2 | 18.9 GiB | 113 s |
-| `--enable-cpu-offload` | 4 | 12.4 GiB | 86 s |
-
-#### Verification
-
-Confirm `wan22_t2v_output.mp4` decodes and that frame 0 is clean.
-
-#### Notes
-
-- Key flags: `--boundary-ratio 0.875` sets the high-noise to low-noise expert
-  switch. `--flow-shift 5.0` with `--guidance-scale 4.0` over 60 steps clears
-  the frame-0 VAE corruption seen at the stock 50-step, `flow_shift=12.0`
-  settings.
-- Known limitations: only offline T2V at 576x320 was qualified. Larger shapes,
-  TI2V, HSDP, CFG parallelism, and online serving are out of scope for this
-  profile.
 
 ## Accelerating with TRTLLM_ATTN + Skip-Softmax (datacenter Blackwell)
 

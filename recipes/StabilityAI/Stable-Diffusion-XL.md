@@ -50,22 +50,6 @@ python examples/offline_inference/text_to_image/text_to_image.py \
   --output sdxl_output.png
 ```
 
-**With CFG:**
-
-```bash
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-python examples/offline_inference/text_to_image/text_to_image.py \
-  --model stabilityai/stable-diffusion-xl-base-1.0 \
-  --negative-prompt "blurry, low quality" \
-  --num-inference-steps 30 \
-  --guidance-scale 7.5 \
-  --cfg-parallel-size 2 \
-  --enable-cpu-offload \
-  --enforce-eager \
-  --seed 42 \
-  --output sdxl_cfg2_q30.png
-```
-
 **Online serving:**
 
 ```bash
@@ -104,6 +88,27 @@ print('saved output.png')
 - `negative_prompt` requires `guidance_scale > 1` to take effect. Recommended range: 5.0-9.0.
 - Default resolution is 1024x1024. Other supported sizes: 512x512, 768x768.
 - The model uses dual CLIP text encoders (ViT-L/14 + OpenCLIP ViT-bigG/14) for rich text understanding.
+
+### 2x Intel Arc BMG GPU (XPU)
+
+Verified separately from the 1× run above. `--cfg-parallel-size 2` places the
+positive and negative branches on two devices.
+
+#### Command
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+python examples/offline_inference/text_to_image/text_to_image.py \
+  --model stabilityai/stable-diffusion-xl-base-1.0 \
+  --negative-prompt "blurry, low quality" \
+  --num-inference-steps 30 \
+  --guidance-scale 7.5 \
+  --cfg-parallel-size 2 \
+  --enable-cpu-offload \
+  --enforce-eager \
+  --seed 42 \
+  --output sdxl_cfg2_q30.png
+```
 
 ### 1x NVIDIA GPU (24+ GB VRAM)
 

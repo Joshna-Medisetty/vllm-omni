@@ -95,11 +95,11 @@ parallelism at `--usp 4` so the two CFG branches cover all 8 GPUs.
 
 ## XPU
 
-### Intel Arc Pro B70 (32 GB)
+### 1x Intel Arc Pro B70 (32 GB)
+
+Reduced 576×320, 9-frame run on one card.
 
 #### Command
-
-**Without CFG:**
 
 ```bash
 python examples/offline_inference/image_to_video/image_to_video.py \
@@ -116,7 +116,13 @@ python examples/offline_inference/image_to_video/image_to_video.py \
   --output i2v_output.mp4
 ```
 
-**With CFG:**
+### 4x Intel Arc Pro B70 (32 GB)
+
+Verified separately from the 1× run. `--tensor-parallel-size 2` and
+`--cfg-parallel-size 2` multiply to a world size of 4. This run is 832×480,
+33 frames.
+
+#### Command
 
 ```bash
 wget -O i2v_input.JPG \

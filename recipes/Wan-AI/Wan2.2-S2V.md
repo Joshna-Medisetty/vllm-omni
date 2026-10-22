@@ -44,7 +44,6 @@ Two configurations are provided:
 
 None
 
-
 #### Command
 
 ```bash
@@ -110,7 +109,7 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
 
 ## XPU
 
-### 4x or 8x Intel Arc B70 (32 GB)
+### 4x Intel Arc B70 (32 GB)
 
 #### Environment
 
@@ -119,7 +118,6 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
 #### Prerequisites
 
 None
-
 
 #### Command
 
@@ -132,7 +130,7 @@ wget -O talk.wav \
   "https://raw.githubusercontent.com/Wan-Video/Wan2.2/main/examples/talk.wav"
 ```
 
-**TP=4:**
+**TP=4 (4 cards):**
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -149,25 +147,7 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
   --output s2v_720p_tp4.mp4
 ```
 
-**TP=4 cfg=2:**
-
-```bash
-VLLM_WORKER_MULTIPROC_METHOD=spawn \
-python examples/offline_inference/speech_to_video/speech_to_video.py \
-  --model Wan-AI/Wan2.2-S2V-14B \
-  --image "Five Hundred Miles.png" \
-  --audio "Five Hundred Miles.MP3" \
-  --prompt "A person singing" \
-  --height 720 --width 1280 --num-frames 81 \
-  --num-inference-steps 40 \
-  --fps 16 \
-  --tensor-parallel-size 4 \
-  --cfg-parallel-size 2 \
-  --vae-use-slicing --vae-use-tiling \
-  --output s2v_720p_tp4_cfg2_offload.mp4
-```
-
-**With CFG:**
+**TP=2 × CFG=2 (4 cards), 832×480.** Verified separately from the 720p TP=4 run.
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -184,6 +164,29 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
   --vae-use-slicing \
   --height 480 --width 832 \
   --output wan22_s2v_cfg2_q40.mp4
+```
+
+### 8x Intel Arc B70 (32 GB)
+
+**TP=4 × CFG=2 (8 cards).** `--tensor-parallel-size` and `--cfg-parallel-size`
+multiply to a world size of 8.
+
+#### Command
+
+```bash
+VLLM_WORKER_MULTIPROC_METHOD=spawn \
+python examples/offline_inference/speech_to_video/speech_to_video.py \
+  --model Wan-AI/Wan2.2-S2V-14B \
+  --image "Five Hundred Miles.png" \
+  --audio "Five Hundred Miles.MP3" \
+  --prompt "A person singing" \
+  --height 720 --width 1280 --num-frames 81 \
+  --num-inference-steps 40 \
+  --fps 16 \
+  --tensor-parallel-size 4 \
+  --cfg-parallel-size 2 \
+  --vae-use-slicing --vae-use-tiling \
+  --output s2v_720p_tp4_cfg2_offload.mp4
 ```
 
 ### Online Serving
@@ -226,26 +229,26 @@ image with lip movements synchronized to the audio. Check:
 #### Notes
 
 - **Key flags:**
-  - `--tensor-parallel-size <N>` — splits the DiT across N GPUs for TP.
-  - `--cfg-parallel-size <N>` - splits the conditioned / unconditioned pred to 2 GPUs run parallel.
-  - `--enable-cpu-offload` — enables model-level CPU offloading (transformer
+    - `--tensor-parallel-size <N>` — splits the DiT across N GPUs for TP.
+    - `--cfg-parallel-size <N>` - splits the conditioned / unconditioned pred to 2 GPUs run parallel.
+    - `--enable-cpu-offload` — enables model-level CPU offloading (transformer
     and text_encoder alternate on GPU). Adds ~12s overhead but reduces VRAM.
-  - `--vae-use-slicing --vae-use-tiling` — reduces VAE peak memory by
+    - `--vae-use-slicing --vae-use-tiling` — reduces VAE peak memory by
     processing frames in slices and spatial tiles.
-  - `--num-frames 81` — generates ~5s of video at 16 fps.
-  - `--num-inference-steps` — quality/speed tradeoff. 4 steps for fast preview,
+    - `--num-frames 81` — generates ~5s of video at 16 fps.
+    - `--num-inference-steps` — quality/speed tradeoff. 4 steps for fast preview,
     40 steps for production quality.
 - **Performance tips:**
-  - Use `--enforce-eager` to skip torch.compile if you encounter recompilation
+    - Use `--enforce-eager` to skip torch.compile if you encounter recompilation
     issues or want deterministic profiling.
-  - For profiling, add `--enable-diffusion-pipeline-profiler` for stage-level
+    - For profiling, add `--enable-diffusion-pipeline-profiler` for stage-level
     timing, or `--profiler-config '{"profiler":"torch","torch_profiler_dir":"./perf","torch_profiler_record_shapes":true,"torch_profiler_with_stack":false}'`
     for detailed op-level torch profiler traces.
-  - The first clip in multi-clip generation includes warmup overhead; subsequent
+    - The first clip in multi-clip generation includes warmup overhead; subsequent
     clips run at steady-state speed.
 - **Known limitations:**
-  - `VLLM_WORKER_MULTIPROC_METHOD=spawn` is required for multi-GPU offline
+    - `VLLM_WORKER_MULTIPROC_METHOD=spawn` is required for multi-GPU offline
     inference to avoid CUDA context issues with forked processes.
-  - CPU offload adds ~12s latency for model-level shuttling between CPU and GPU.
-  - S2V self-attention is ~8.5× more expensive than T2V due to audio-visual
+    - CPU offload adds ~12s latency for model-level shuttling between CPU and GPU.
+    - S2V self-attention is ~8.5× more expensive than T2V due to audio-visual
     conditioning fused into self-attn blocks.
