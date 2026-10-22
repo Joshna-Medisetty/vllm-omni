@@ -10,7 +10,6 @@ from transformers.models.t5gemma2.modeling_t5gemma2 import (
     T5Gemma2TextEncoder,
     sliding_window_mask_function,
 )
-from vllm.platforms import current_platform
 
 from vllm_omni.platforms import current_omni_platform
 
@@ -81,13 +80,8 @@ class BreezeTextEncoderGraph:
         for _ in range(3):
             self._encode(encoder, projection)
         current_omni_platform.synchronize()
-        self.graph = None
-        if current_platform.is_cuda_alike():
-            self.graph = torch.cuda.CUDAGraph()
-            with torch.cuda.graph(
-                self.graph, pool=current_platform.get_global_graph_pool(), capture_error_mode="thread_local"
-            ):
-                self.output = self._encode(encoder, projection)
+        self.output: torch.Tensor | None = None
+        self.graph = current_omni_platform.capture_graph(self._run)
 
     def _encode(self, encoder: T5Gemma2TextEncoder, projection: nn.Linear) -> torch.Tensor:
         embedding = encoder.embed_tokens

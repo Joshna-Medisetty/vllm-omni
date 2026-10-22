@@ -389,30 +389,15 @@ class BreezeDepthGraph:
                 greedy=self.greedy,
             )
         current_omni_platform.synchronize()
-        self.graph = None
-        if current_platform.is_cuda_alike():
-            self.graph = torch.cuda.CUDAGraph()
-            if self.noise_generators is not None:
-                for generator in self.noise_generators:
-                    self.graph.register_generator_state(generator)
-            with torch.cuda.graph(
-                self.graph, pool=current_platform.get_global_graph_pool(), capture_error_mode="thread_local"
-            ):
-                if self.noise_generators is not None:
-                    self._fill_noise()
-                self.output = model._generate_frame(
-                    self.hidden,
-                    self.first,
-                    self.caches,
-                    *parameters,
-                    generator,
-                    self.noise,
-                    self.guidance_scale,
-                    self.parameters,
-                    greedy=self.greedy,
-                )
+        self.output: torch.Tensor | None = None
+        self.graph = current_omni_platform.capture_graph(self._capture, self.noise_generators or ())
 
-    def _run_eager(self) -> None:
+    def _capture(self) -> None:
+        if self.noise_generators is not None:
+            self._fill_noise()
+        self._run()
+
+    def _run(self) -> None:
         self.output = self._model._generate_frame(
             self.hidden,
             self.first,
@@ -426,7 +411,7 @@ class BreezeDepthGraph:
         )
 
     def replay(self) -> None:
-        current_omni_platform.replay_graph(self.graph, self._run_eager)
+        current_omni_platform.replay_graph(self.graph, self._run)
 
     def _fill_noise(self) -> None:
         assert self.noise is not None and self.noise_generators is not None
