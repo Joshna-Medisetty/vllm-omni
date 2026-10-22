@@ -91,9 +91,6 @@ print('saved output.png')
 
 ### 2x Intel Arc BMG GPU (XPU)
 
-Verified separately from the 1× run above. `--cfg-parallel-size 2` places the
-positive and negative branches on two devices.
-
 #### Command
 
 ```bash

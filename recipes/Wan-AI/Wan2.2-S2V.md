@@ -130,7 +130,7 @@ wget -O talk.wav \
   "https://raw.githubusercontent.com/Wan-Video/Wan2.2/main/examples/talk.wav"
 ```
 
-**TP=4 (4 cards):**
+**TP=4:**
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -147,7 +147,7 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
   --output s2v_720p_tp4.mp4
 ```
 
-**TP=2 × CFG=2 (4 cards), 832×480.** Verified separately from the 720p TP=4 run.
+**With CFG:**
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \
@@ -168,10 +168,9 @@ python examples/offline_inference/speech_to_video/speech_to_video.py \
 
 ### 8x Intel Arc B70 (32 GB)
 
-**TP=4 × CFG=2 (8 cards).** `--tensor-parallel-size` and `--cfg-parallel-size`
-multiply to a world size of 8.
-
 #### Command
+
+**TP=4 cfg=2:**
 
 ```bash
 VLLM_WORKER_MULTIPROC_METHOD=spawn \

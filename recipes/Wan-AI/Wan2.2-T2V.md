@@ -147,15 +147,11 @@ Confirm `wan22_t2v_output.mp4` decodes and that frame 0 is clean.
   switch. `--flow-shift 5.0` with `--guidance-scale 4.0` over 60 steps clears
   the frame-0 VAE corruption seen at the stock 50-step, `flow_shift=12.0`
   settings.
-- Known limitations: this 1× profile qualified only offline T2V at 576×320.
-  Larger shapes and CFG parallel are the 4× profile below. TI2V, HSDP, and
-  online serving are out of scope.
+- Known limitations: only offline T2V at 576x320 was qualified. Larger shapes,
+  TI2V, HSDP, CFG parallelism, and online serving are out of scope for this
+  profile.
 
 ### 4x Intel Arc Pro B70 (32 GB)
-
-Verified separately from the 1× 576×320 run. `--tensor-parallel-size 2` and
-`--cfg-parallel-size 2` multiply to a world size of 4. This run is 832×480,
-33 frames.
 
 #### Command
 
