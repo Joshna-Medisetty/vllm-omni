@@ -168,7 +168,6 @@ python examples/offline_inference/text_to_video/text_to_video.py \
   --tensor-parallel-size 2 \
   --cfg-parallel-size 2 \
   --enable-cpu-offload \
-  --enforce-eager \
   --flow-shift 12.0 \
   --vae-use-slicing \
   --fps 16 \
