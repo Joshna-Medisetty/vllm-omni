@@ -472,9 +472,22 @@ class _Magi2StagedComponent(nn.Module):
         )
 
     def load_to_device(self) -> None:
+        if getattr(self, "_omni_layerwise_enabled", False):
+            device = self._stager.device
+            for name, child in self.module.text_model.named_children():
+                if name != "layers":
+                    child.to(device)
+            return
         self._stager.load()
 
     def offload_to_cpu(self) -> None:
+        if getattr(self, "_omni_layerwise_enabled", False):
+            for hook in self._omni_layerwise_hooks:
+                hook.offload_layer()
+            for name, child in self.module.text_model.named_children():
+                if name != "layers":
+                    child.to("cpu")
+            return
         self._stager.offload()
 
     def to(self, *_args: object, **_kwargs: object) -> _Magi2StagedComponent:
@@ -519,6 +532,7 @@ class Magi2Pipeline(
         "audio_decoder",
     ]
     _offload_plan: ClassVar[OffloadPlan] = OffloadPlan(
+        encoder_block_attrs={"text_encoder": ("module.text_model.layers",)},
         on_demand_component_paths=frozenset(
             {
                 "text_encoder",
@@ -526,7 +540,7 @@ class Magi2Pipeline(
                 "video_decoder",
                 "audio_decoder",
             }
-        )
+        ),
     )
 
     @staticmethod
