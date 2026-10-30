@@ -462,32 +462,27 @@ class _Magi2StagedComponent(nn.Module):
         device: str | torch.device,
         *,
         pin_memory: bool,
+        stage_whole_module: bool = True,
     ) -> None:
         super().__init__()
         self.module = module
+        staged: nn.Module | list[nn.Module] = module
+        text_model = getattr(module, "text_model", None)
+        if not stage_whole_module and isinstance(getattr(text_model, "layers", None), nn.ModuleList):
+            staged = [child for name, child in text_model.named_children() if name != "layers"]
         self._stager = PinnedModuleStager(
-            module,
+            staged,
             torch.device(device),
             pin_memory=pin_memory,
         )
 
     def load_to_device(self) -> None:
-        if getattr(self, "_omni_layerwise_enabled", False):
-            device = self._stager.device
-            for name, child in self.module.text_model.named_children():
-                if name != "layers":
-                    child.to(device)
-            return
         self._stager.load()
 
     def offload_to_cpu(self) -> None:
         if getattr(self, "_omni_layerwise_enabled", False):
             for hook in self._omni_layerwise_hooks:
                 hook.offload_layer()
-            for name, child in self.module.text_model.named_children():
-                if name != "layers":
-                    child.to("cpu")
-            return
         self._stager.offload()
 
     def to(self, *_args: object, **_kwargs: object) -> _Magi2StagedComponent:
@@ -668,6 +663,7 @@ class Magi2Pipeline(
             text_encoder,
             self.device_str,
             pin_memory=pin_memory,
+            stage_whole_module=not self._transformer_is_layerwise_offloaded,
         )
         self.image_vae = _Magi2StagedComponent(
             image_vae,
