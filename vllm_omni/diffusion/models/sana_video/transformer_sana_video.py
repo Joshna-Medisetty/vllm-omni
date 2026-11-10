@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-FileCopyrightText: Copyright contributors to the vLLM-Omni project
+
 # Copyright 2025 The HuggingFace Team and SANA-Video Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -684,10 +687,11 @@ class SanaLinearAttention(nn.Module):
         value = value.permute(0, 2, 3, 1)
 
         query_rotate, key_rotate, value = query_rotate.float(), key_rotate.float(), value.float()
+        # Accumulate the unrotated denominator path (k_sum, z) in FP32 too: the
+        # sum spans the full flattened T*H*W sequence shared by all frames, and
+        # bf16 accumulation over ~32k tokens loses precision.
+        query, key = query.float(), key.float()
 
-        # Keep the unrotated denominator contraction in the input dtype. This
-        # intentionally matches Diffusers 0.38.0's SanaLinearAttnProcessor3_0;
-        # only the rotated numerator path is accumulated in FP32.
         k_sum = key.sum(dim=-1, keepdim=True)
         scores = torch.matmul(value, key_rotate.transpose(-1, -2))
         if get_sequence_parallel_world_size() > 1:
@@ -695,7 +699,7 @@ class SanaLinearAttention(nn.Module):
             # turns the per-rank partial state into the global one.
             packed = torch.cat([scores, k_sum.float()], dim=-1)
             packed = get_sp_group().all_reduce(packed)
-            scores, k_sum = packed[..., :-1], packed[..., -1:].to(key.dtype)
+            scores, k_sum = packed[..., :-1], packed[..., -1:]
         z = 1 / (k_sum.transpose(-2, -1) @ query + 1e-15)
         hidden_states = torch.matmul(scores, query_rotate)
 

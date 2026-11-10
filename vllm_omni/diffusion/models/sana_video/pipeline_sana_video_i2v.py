@@ -9,6 +9,7 @@ from math import sqrt
 
 import PIL.Image
 import torch
+from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 from diffusers.utils.torch_utils import randn_tensor
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
@@ -207,8 +208,9 @@ class SanaImageToVideoPipeline(SanaVideoPipeline, SupportImageInput):
             generator = torch.Generator(device=self.device).manual_seed(sampling.seed)
 
         extra_args = sampling.extra_args or {}
-        motion_score = extra_args.get("motion_score")
-        if motion_score is not None:
+        # Upstream SANA-Video I2V defaults to motion_score=30 and always appends it.
+        motion_score = extra_args.get("motion_score", 30)
+        if motion_score is not None and "motion score:" not in prompt:
             prompt = f"{prompt} motion score: {int(motion_score)}."
 
         video = self._generate_i2v(
@@ -306,7 +308,9 @@ class SanaImageToVideoPipeline(SanaVideoPipeline, SupportImageInput):
                         noise_pred = noise_pred[:, :output_slice]
 
                 # Only the non-conditioning frames are denoised; the first frame is carried through.
-                denoised = self.scheduler.step(
+                # History-free flow-match Euler step (upstream I2V recipe).
+                i2v_scheduler = getattr(self, "i2v_scheduler", None) or self.scheduler
+                denoised = i2v_scheduler.step(
                     noise_pred[:, :, 1:],
                     timestep_value,
                     latents[:, :, 1:],
@@ -375,8 +379,13 @@ class SanaImageToVideoPipeline(SanaVideoPipeline, SupportImageInput):
             max_sequence_length=max_sequence_length,
             complex_human_instruction=complex_human_instruction,
         )
+        # SANA-Video I2V samples with a flow-match Euler scheduler instead of the
+        # T2V DPMSolverMultistep scheduler: it is history-free, so slicing off the
+        # conditioning frame every step cannot corrupt multistep state.
+        flow_shift = getattr(self.scheduler.config, "flow_shift", None) or 8.0
+        self.i2v_scheduler = FlowMatchEulerDiscreteScheduler(shift=flow_shift)
         timesteps, num_inference_steps = retrieve_timesteps(
-            self.scheduler,
+            self.i2v_scheduler,
             num_inference_steps=num_inference_steps,
             device=self.device,
             timesteps=timesteps,
@@ -410,7 +419,8 @@ class SanaImageToVideoPipeline(SanaVideoPipeline, SupportImageInput):
         conditioning_mask[:, :, 0] = 1
 
         self._num_timesteps = len(timesteps)
-        extra_step_kwargs = self.prepare_extra_step_kwargs(generator, eta)
+        # FlowMatchEulerDiscreteScheduler.step takes no eta; keep step kwargs empty.
+        extra_step_kwargs = {}
         # learned sigma: transformer predicts 2x latent channels; keep the first half.
         output_slice = latent_channels if self.transformer.config.out_channels // 2 == latent_channels else None
         latents = self.diffuse(
