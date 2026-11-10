@@ -36,6 +36,7 @@ from vllm_omni.diffusion.models.lingbot_video.request_utils import (
 )
 from vllm_omni.diffusion.models.progress_bar import ProgressBarMixin
 from vllm_omni.diffusion.models.schedulers import FlowUniPCMultistepScheduler
+from vllm_omni.diffusion.offloader.config import offload_enabled
 from vllm_omni.diffusion.profiler.diffusion_pipeline_profiler import DiffusionPipelineProfilerMixin
 from vllm_omni.diffusion.request import OmniDiffusionRequest
 from vllm_omni.diffusion.worker.request_batch import DiffusionRequestBatch
@@ -350,32 +351,43 @@ class LingBotVideoPipeline(
         vae_subfolder = str(model_config.get("vae_subfolder", "vae"))
         scheduler_subfolder = str(model_config.get("scheduler_subfolder", "scheduler"))
 
-        self.transformer = LingBotVideoTransformer3DModel.from_pretrained(
-            model,
-            subfolder=transformer_subfolder,
-            torch_dtype=transformer_dtype,
-            local_files_only=local_files_only,
-        ).to(self.device)
+        # When CPU offload is active, keep every component on the host during
+        # construction. The offload backend (installed after loading) places
+        # encoders/VAE/non-block DiT state on the accelerator and streams the
+        # DiT blocks; moving the full DiT here would OOM before that happens.
+        # ``self.device`` stays the accelerator for runtime latents/inputs.
+        load_device = torch.device("cpu") if offload_enabled(od_config) else self.device
+        load_ctx = torch.device("cpu") if load_device.type == "cpu" else nullcontext()
+
+        with load_ctx:
+            self.transformer = LingBotVideoTransformer3DModel.from_pretrained(
+                model,
+                subfolder=transformer_subfolder,
+                torch_dtype=transformer_dtype,
+                local_files_only=local_files_only,
+            ).to(load_device)
         text_encoder_kwargs: dict[str, Any] = {
             "dtype": text_encoder_dtype,
             "local_files_only": local_files_only,
         }
-        self.text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
-            model,
-            subfolder=text_encoder_subfolder,
-            **text_encoder_kwargs,
-        ).to(self.device)
+        with load_ctx:
+            self.text_encoder = Qwen3VLForConditionalGeneration.from_pretrained(
+                model,
+                subfolder=text_encoder_subfolder,
+                **text_encoder_kwargs,
+            ).to(load_device)
         self.processor = Qwen3VLProcessor.from_pretrained(
             model,
             subfolder=processor_subfolder,
             local_files_only=local_files_only,
         )
-        self.vae = AutoencoderKLWan.from_pretrained(
-            model,
-            subfolder=vae_subfolder,
-            torch_dtype=vae_dtype,
-            local_files_only=local_files_only,
-        ).to(self.device)
+        with load_ctx:
+            self.vae = AutoencoderKLWan.from_pretrained(
+                model,
+                subfolder=vae_subfolder,
+                torch_dtype=vae_dtype,
+                local_files_only=local_files_only,
+            ).to(load_device)
         self.scheduler = FlowUniPCMultistepScheduler.from_pretrained(
             model,
             subfolder=scheduler_subfolder,
