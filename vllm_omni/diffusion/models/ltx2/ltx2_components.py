@@ -92,17 +92,6 @@ def _ltx2_use_diffusion_decoder(od_config: Any, model_version: str) -> bool:
     use_conv_vae = extras.get(_LTX2_CONV_VAE_EXTRA, False)
     if not isinstance(use_conv_vae, bool):
         raise TypeError(f"{_LTX2_CONV_VAE_EXTRA} must be a bool, got {type(use_conv_vae)!r}")
-    if model_version == "2.5" and _LTX2_CONV_VAE_EXTRA not in extras:
-        from vllm_omni.platforms import current_omni_platform
-
-        if not current_omni_platform.is_cuda():
-            logger.warning(
-                "LTX-2.5 DiffVAE requires the CUDA-only shi-labs/natten kernel; "
-                "falling back to ConvVAE on %s. Set extras.%s=false to force DiffVAE.",
-                current_omni_platform.device_type,
-                _LTX2_CONV_VAE_EXTRA,
-            )
-            return False
     return model_version == "2.5" and not use_conv_vae
 
 

@@ -1,0 +1,7 @@
+# XPU has no shi-labs/natten, so LTX-2.5 uses ConvVAE. CUDA keeps DiffVAE.
+platforms:
+  xpu:
+    stages:
+      - stage_id: 0
+        extras:
+          ltx2_use_conv_vae: true
