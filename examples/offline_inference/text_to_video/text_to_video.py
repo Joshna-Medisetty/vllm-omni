@@ -507,6 +507,15 @@ def parse_args() -> argparse.Namespace:
         default=1,
         help="Number of HSDP replica groups.",
     )
+    parser.add_argument(
+        "--stage-overrides",
+        type=str,
+        default=None,
+        help=(
+            "JSON per-stage overrides passed to Omni(stage_overrides=...), "
+            'e.g. \'{"0":{"extras":{"ltx2_use_conv_vae":true}}}\''
+        ),
+    )
     return parser.parse_args()
 
 
@@ -593,6 +602,8 @@ def main():
     )
     if args.deploy_config:
         omni_kwargs["deploy_config"] = args.deploy_config
+    if args.stage_overrides is not None:
+        omni_kwargs["stage_overrides"] = args.stage_overrides
     if args.boundary_ratio is not None:
         omni_kwargs["boundary_ratio"] = args.boundary_ratio
     if args.flow_shift is not None:
