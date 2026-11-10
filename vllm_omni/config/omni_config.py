@@ -238,6 +238,9 @@ class _CacheEngineOverrides(TypedDict, total=False):
     disable_hybrid_kv_cache_manager: bool
     mm_processor_cache_gb: float
     mamba_ssm_cache_dtype: str
+    # vLLM EngineArgs UVA weight offload inputs (OffloadConfig/UVAOffloadConfig).
+    cpu_offload_gb: float
+    offload_backend: str
 
 
 class _SchedulerEngineOverrides(TypedDict, total=False):
@@ -586,6 +589,10 @@ class OmniStageCacheConfig(_TrackExplicitConfigFields, VllmCacheConfig):
     mm_processor_cache_gb: float | None = Field(default=None, ge=0.0)
     # Hybrid-mamba SSM state dtype ("auto"/"float32"); vLLM CacheConfig field.
     mamba_ssm_cache_dtype: str | None = None
+    # vLLM EngineArgs offload inputs; projected to EngineArgs, which builds
+    # VllmConfig.offload_config. None preserves the upstream default.
+    cpu_offload_gb: float | None = Field(default=None, ge=0.0)
+    offload_backend: str | None = None
 
 
 @_enforce_keyword_only_init
