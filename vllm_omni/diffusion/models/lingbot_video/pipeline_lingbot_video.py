@@ -12,13 +12,13 @@ from typing import Any, ClassVar
 import numpy as np
 import torch
 import torch.distributed as dist
-from diffusers import AutoencoderKLWan
 from diffusers.utils.torch_utils import randn_tensor
 from PIL import Image
 from torch import nn
 from transformers import Qwen3VLForConditionalGeneration, Qwen3VLProcessor
 
 from vllm_omni.diffusion.data import DiffusionOutput, OmniDiffusionConfig
+from vllm_omni.diffusion.distributed.autoencoders.autoencoder_kl_wan import DistributedAutoencoderKLWan
 from vllm_omni.diffusion.distributed.utils import get_local_device
 from vllm_omni.diffusion.models.interface import (
     SupportImageInput,
@@ -370,7 +370,7 @@ class LingBotVideoPipeline(
             subfolder=processor_subfolder,
             local_files_only=local_files_only,
         )
-        self.vae = AutoencoderKLWan.from_pretrained(
+        self.vae = DistributedAutoencoderKLWan.from_pretrained(
             model,
             subfolder=vae_subfolder,
             torch_dtype=vae_dtype,
