@@ -35,6 +35,7 @@ from vllm_omni.diffusion.offloader.config import (
 )
 from vllm_omni.diffusion.offloader.module_collector import ModuleDiscovery
 from vllm_omni.diffusion.offloader.offload_plan import OffloadPlan
+from vllm_omni.platforms import current_omni_platform
 from vllm_omni.transformers_utils.repo_utils import hf_api
 
 if TYPE_CHECKING:
@@ -53,6 +54,7 @@ from .vae.decoder import (
     LTX25_NATIVE_DIFFUSION_DECODER_FILENAME,
     LTX25_NATIVE_DIFFUSION_DECODER_REPO_ID,
     LTX2VideoVaeNeighborhoodNattenProcessor,
+    LTX2VideoVaeNeighborhoodPortableProcessor,
 )
 from .vae.distributed import DistributedLTX2VideoDiffusionDecoderModel
 
@@ -320,6 +322,15 @@ def resolve_ltx_artifact(
             f"Unable to resolve LTX artifact {filename!r}. Searched {candidate}; "
             f"place the file in the model root or make {repo_id} available."
         ) from exc
+
+
+def _ltx25_decoder_attention_processor() -> (
+    LTX2VideoVaeNeighborhoodNattenProcessor | LTX2VideoVaeNeighborhoodPortableProcessor
+):
+    """Use NATTEN on CUDA and the same windowed attention elsewhere."""
+    if current_omni_platform.is_cuda():
+        return _create_ltx25_natten_processor()
+    return LTX2VideoVaeNeighborhoodPortableProcessor()
 
 
 def _create_ltx25_natten_processor() -> LTX2VideoVaeNeighborhoodNattenProcessor:
@@ -779,11 +790,7 @@ def initialize_pipeline_components(pipeline: Any, od_config: Any) -> None:
             dtype=dtype,
             revision=revision,
         )
-        # The canonical decoder is trained and validated with NATTEN. Its
-        # portable FlexAttention fallback materializes an impractically large
-        # block mask at production video sizes, so fail early if the matching
-        # Hub kernel cannot be loaded instead of failing later during decode.
-        pipeline.diffusion_decoder.set_attn_processor(_create_ltx25_natten_processor())
+        pipeline.diffusion_decoder.set_attn_processor(_ltx25_decoder_attention_processor())
         vae_patch_parallel_size = int(
             getattr(getattr(od_config, "parallel_config", None), "vae_patch_parallel_size", 1)
         )

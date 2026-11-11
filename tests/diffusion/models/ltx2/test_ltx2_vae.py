@@ -1018,3 +1018,46 @@ class TestLTX23VaeTiling:
         assert seen["broadcast_result"] is False
         assert seen["operator"].split.__name__ == "tile_split"
         assert seen["operator"].merge.__name__ == "tile_merge"
+
+
+def test_non_cuda_diffvae_keeps_neighborhood_attention(monkeypatch):
+    from vllm_omni.diffusion.models.ltx2 import ltx2_components
+    from vllm_omni.diffusion.models.ltx2.vae.decoder import LTX2VideoVaeNeighborhoodPortableProcessor
+
+    monkeypatch.setattr(ltx2_components.current_omni_platform, "is_cuda", lambda: False)
+
+    processor = ltx2_components._ltx25_decoder_attention_processor()
+
+    assert isinstance(processor, LTX2VideoVaeNeighborhoodPortableProcessor)
+
+
+def test_portable_neighborhood_attention_matches_inward_shifted_window(monkeypatch):
+    from vllm_omni.diffusion.models.ltx2.vae import decoder as diffvae
+
+    monkeypatch.setattr(diffvae, "_PORTABLE_ATTENTION_QUERY_CHUNK", 3)
+    frames, height, width = 5, 4, 6
+    kernel = (3, 5, 3)
+    generator = torch.Generator().manual_seed(7)
+    query, key, value = (torch.randn(1, frames, height, width, 2, 4, generator=generator) for _ in range(3))
+    actual = diffvae.neighborhood_attention_3d(query, key, value, kernel)
+
+    expected = torch.empty_like(query)
+    sizes = tuple(min(size, length) for size, length in zip(kernel, (frames, height, width)))
+    for t in range(frames):
+        for h in range(height):
+            for w in range(width):
+                start = tuple(
+                    min(max(pos - size // 2, 0), length - size)
+                    for pos, size, length in zip((t, h, w), sizes, (frames, height, width))
+                )
+                stop = tuple(origin + size for origin, size in zip(start, sizes))
+                window_key = key[:, start[0] : stop[0], start[1] : stop[1], start[2] : stop[2]]
+                window_value = value[:, start[0] : stop[0], start[1] : stop[1], start[2] : stop[2]]
+                scores = torch.einsum(
+                    "bhd,bxyzhd->bhxyz",
+                    query[:, t, h, w].float(),
+                    window_key.float(),
+                )
+                probabilities = torch.softmax(scores.flatten(2), dim=-1).reshape(scores.shape)
+                expected[:, t, h, w] = torch.einsum("bhxyz,bxyzhd->bhd", probabilities, window_value.float())
+    torch.testing.assert_close(actual, expected)

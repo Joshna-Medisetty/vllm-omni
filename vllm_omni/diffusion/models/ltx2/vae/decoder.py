@@ -196,10 +196,77 @@ class LTX2VideoVaeNeighborhoodNattenProcessor(diffusers_decoder.LTX2VideoVaeNeig
         return attn.to_out[0](hidden_states)
 
 
+# Query chunk for the portable window. A flex BlockMask for a production
+# stage is hundreds of GiB, so scores stay bounded to one window per query.
+_PORTABLE_ATTENTION_QUERY_CHUNK = 1024
+
+
+def neighborhood_attention_3d(
+    query: torch.Tensor,
+    key: torch.Tensor,
+    value: torch.Tensor,
+    kernel_size: tuple[int, int, int],
+) -> torch.Tensor:
+    """Attend inside NATTEN's inward-shifted 3D window.
+
+    Each query sees exactly ``kernel`` positions. At the border the window
+    slides inward instead of clipping, matching ``na3d``. The query is already
+    scaled, so the score uses ``scale=1``.
+    """
+    batch, frames, height, width, heads, dim = query.shape
+    kernel = tuple(min(size, length) for size, length in zip(kernel_size, (frames, height, width)))
+    tokens = frames * height * width
+    flat_query = query.reshape(batch, tokens, heads, dim)
+    output = torch.empty_like(flat_query)
+
+    def starts(length: int, size: int) -> torch.Tensor:
+        positions = torch.arange(length, device=query.device)
+        return positions.sub(size // 2).clamp(min=0, max=length - size)
+
+    start_t, start_h, start_w = (starts(length, size) for length, size in zip((frames, height, width), kernel))
+    offset_t, offset_h, offset_w = (torch.arange(size, device=query.device) for size in kernel)
+    frame_stride = height * width
+    for begin in range(0, tokens, _PORTABLE_ATTENTION_QUERY_CHUNK):
+        end = min(begin + _PORTABLE_ATTENTION_QUERY_CHUNK, tokens)
+        index = torch.arange(begin, end, device=query.device)
+        query_t = index // frame_stride
+        remainder = index % frame_stride
+        query_h = remainder // width
+        query_w = remainder % width
+        window_t = start_t[query_t, None] + offset_t
+        window_h = start_h[query_h, None] + offset_h
+        window_w = start_w[query_w, None] + offset_w
+        gathered_key = key[:, window_t[:, :, None, None], window_h[:, None, :, None], window_w[:, None, None, :]]
+        gathered_value = value[:, window_t[:, :, None, None], window_h[:, None, :, None], window_w[:, None, None, :]]
+        window = math.prod(kernel)
+        gathered_key = gathered_key.reshape(batch, end - begin, window, heads, dim)
+        gathered_value = gathered_value.reshape(batch, end - begin, window, heads, dim)
+        scores = torch.einsum("bchd,bcwhd->bhcw", flat_query[:, begin:end].float(), gathered_key.float())
+        probabilities = torch.softmax(scores, dim=-1)
+        attended = torch.einsum("bhcw,bcwhd->bchd", probabilities, gathered_value.float())
+        output[:, begin:end] = attended.to(dtype=query.dtype)
+    return output.view(batch, frames, height, width, heads, dim)
+
+
+class LTX2VideoVaeNeighborhoodPortableProcessor:
+    """DiffVAE neighborhood attention for devices without the NATTEN kernel."""
+
+    def __call__(
+        self, attn: "LTX2VideoVaeNeighborhoodAttention", hidden_states: torch.Tensor, block_mask=None
+    ) -> torch.Tensor:
+        del block_mask
+        batch_size, num_frames, height, width, channels = hidden_states.shape
+        query, key, value = attn.project_qkv(hidden_states)
+        hidden_states = neighborhood_attention_3d(query, key, value, tuple(attn.kernel_size))
+        hidden_states = hidden_states.reshape(batch_size, num_frames, height, width, channels)
+        return attn.to_out[0](hidden_states)
+
+
 class LTX2VideoVaeNeighborhoodAttention(diffusers_decoder.LTX2VideoVaeNeighborhoodAttention):
     _available_processors = [
         *diffusers_decoder.LTX2VideoVaeNeighborhoodAttention._available_processors,
         LTX2VideoVaeNeighborhoodNattenProcessor,
+        LTX2VideoVaeNeighborhoodPortableProcessor,
     ]
 
     def project_qkv(self, hidden_states: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:

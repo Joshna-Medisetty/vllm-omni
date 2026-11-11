@@ -14,7 +14,7 @@ from vllm_omni.config.composable_parallel.strategy_loader import load_strategy_s
 from vllm_omni.config.config_factory import StageConfigFactory, with_trust_remote_code_override
 from vllm_omni.config.endpoint_policy import EndpointRestriction
 from vllm_omni.config.omni_config import VllmOmniConfig
-from vllm_omni.config.stage_config import _DEPLOY_DIR, PipelineConfig
+from vllm_omni.config.stage_config import PipelineConfig
 from vllm_omni.diffusion.data import resolve_model_class_name
 from vllm_omni.diffusion.registry import DiffusionModelRegistry, resolve_native_single_file
 from vllm_omni.diffusion.utils.hf_utils import is_diffusion_model
@@ -234,8 +234,6 @@ def resolve_omni_config(
         )
     if model_class_name is not None:
         normalized_overrides.setdefault("model_class_name", model_class_name)
-    if deploy_config_path is None and model_class_name == "LTX2Pipeline":
-        deploy_config_path = str(_DEPLOY_DIR / "ltx2.yaml")
     default_config = StageConfigFactory.create_typed_default_diffusion(
         model, normalized_overrides, deploy_config_path=deploy_config_path
     )

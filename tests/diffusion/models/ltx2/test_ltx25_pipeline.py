@@ -301,6 +301,7 @@ def test_ltx_converted_component_loading_propagates_revision(monkeypatch):
     monkeypatch.setattr(ltx2_components, "_load_component", fake_component)
     monkeypatch.setattr(ltx2_components, "_load_ltx25_native_diffusion_decoder", fake_native_diffusion_decoder)
     monkeypatch.setattr(ltx2_components, "load_transformer_config", fake_transformer_config)
+    monkeypatch.setattr(ltx2_components.current_omni_platform, "is_cuda", lambda: True)
     monkeypatch.setattr(
         ltx2_components,
         "LTX2VideoVaeNeighborhoodNattenProcessor",
