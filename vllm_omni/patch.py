@@ -834,3 +834,114 @@ def _patch_mrv2_stop_token_capacity() -> None:
 
 
 _patch_mrv2_stop_token_capacity()
+
+
+def _xpu_pwal_undoes_uva(method: object) -> bool:
+    """True when this pin transposes XPU expert weights with ``contiguous()``.
+
+    That call on a UVA view allocates a device tensor and copies the expert
+    back onto the card. Current vLLM relayouts the weights inside the XPU
+    kernel and no longer has the branch.
+    """
+    try:
+        import inspect
+
+        source = inspect.getsource(method)  # type: ignore[arg-type]
+    except (OSError, TypeError):
+        return False
+    return "UnquantizedMoeBackend.XPU" in source and ".contiguous()" in source
+
+
+def _rehost_transposed_expert_weight(weight: torch.Tensor) -> torch.Tensor:
+    """Transpose one expert weight on the host and re-expose it as a UVA view."""
+    from vllm.utils.platform_utils import is_pin_memory_available
+    from vllm.utils.torch_utils import get_accelerator_view_from_cpu_tensor
+
+    cpu_weight = weight.detach().cpu().transpose(-1, -2).contiguous()
+    if is_pin_memory_available():
+        cpu_weight = cpu_weight.pin_memory()
+    return get_accelerator_view_from_cpu_tensor(cpu_weight)
+
+
+def _wrap_unquantized_moe_pwal(original):
+    def _patched_unquant_moe_pwal(self, layer, *args, **kwargs):
+        backend = getattr(self, "unquantized_backend", None)
+        flagged = []
+        if getattr(backend, "name", None) == "XPU":
+            for name in ("w13_weight", "w2_weight"):
+                param = getattr(layer, name, None)
+                if param is not None and getattr(param, "_vllm_is_uva_offloaded", False):
+                    flagged.append(param)
+        if not flagged:
+            return original(self, layer, *args, **kwargs)
+
+        flagged_ids = {id(param) for param in flagged}
+        original_transpose = torch.Tensor.transpose
+        original_contiguous = torch.Tensor.contiguous
+
+        def transpose(tensor, dim0, dim1):
+            if id(tensor) not in flagged_ids or (dim0, dim1) not in ((-1, -2), (-2, -1)):
+                return original_transpose(tensor, dim0, dim1)
+            view = _rehost_transposed_expert_weight(tensor)
+            view._vllm_omni_uva_transposed = True
+            return view
+
+        def contiguous(tensor, *cont_args, **cont_kwargs):
+            if getattr(tensor, "_vllm_omni_uva_transposed", False):
+                return tensor
+            return original_contiguous(tensor, *cont_args, **cont_kwargs)
+
+        torch.Tensor.transpose = transpose
+        torch.Tensor.contiguous = contiguous
+        try:
+            return original(self, layer, *args, **kwargs)
+        finally:
+            torch.Tensor.transpose = original_transpose
+            torch.Tensor.contiguous = original_contiguous
+            for param in flagged:
+                param._vllm_is_uva_offloaded = True
+
+    setattr(_patched_unquant_moe_pwal, "_vllm_omni_wrapped_pwal", original)
+    return _patched_unquant_moe_pwal
+
+
+def _patch_xpu_uva_moe_weight_transpose() -> None:
+    """Transpose UVA-offloaded XPU MoE experts on the host.
+
+    vLLM's XPU branch of ``UnquantizedFusedMoEMethod.process_weights_after_loading``
+    does ``transpose().contiguous()``. On a UVA view that allocates device
+    memory and undoes ``cpu_offload_gb``. The wrap leaves every other backend,
+    and XPU weights that are not UVA-offloaded, on the original method. It
+    installs only while that ``contiguous()`` branch is still in the method.
+    """
+    try:
+        from vllm.model_executor.layers.fused_moe.unquantized_fused_moe_method import (
+            UnquantizedFusedMoEMethod,
+        )
+    except ImportError:
+        _PATCH_LOGGER.info("XPU UVA MoE transpose patch skipped: UnquantizedFusedMoEMethod is not importable.")
+        return
+
+    current = UnquantizedFusedMoEMethod.process_weights_after_loading
+    original = getattr(current, "_vllm_omni_wrapped_pwal", current)
+    if not _xpu_pwal_undoes_uva(original):
+        _PATCH_LOGGER.info(
+            "XPU UVA MoE transpose patch skipped: process_weights_after_loading "
+            "no longer materializes transposed expert weights with contiguous()."
+        )
+        return
+    if current is not original:
+        return
+
+    patched = _wrap_unquantized_moe_pwal(original)
+    UnquantizedFusedMoEMethod.process_weights_after_loading = patched
+    if UnquantizedFusedMoEMethod.process_weights_after_loading is not patched:
+        raise RuntimeError(
+            "XPU UVA MoE transpose patch failed to install on UnquantizedFusedMoEMethod.process_weights_after_loading"
+        )
+    _PATCH_LOGGER.info(
+        "XPU UVA MoE transpose patch installed: UVA-offloaded expert weights stay on the host across the XPU transpose."
+    )
+
+
+_patch_xpu_uva_moe_weight_transpose()

@@ -519,14 +519,21 @@ def test_diffusion_cli_parallel_overrides_beat_nested_deploy_parallel_config():
 @pytest.mark.parametrize(
     "cli_overrides",
     [
-        {"cpu_offload_gb": 4},
-        {"stage_0_cpu_offload_gb": 4},
+        {"cpu_offload_gb": 4, "offload_backend": "uva"},
+        {"stage_0_cpu_offload_gb": 4, "stage_0_offload_backend": "uva"},
     ],
     ids=["global", "stage-scoped"],
 )
-def test_from_pipeline_config_rejects_explicit_unowned_engine_cli_fields(cli_overrides):
-    with pytest.raises(ValueError, match=r"no structured config owner: cpu_offload_gb"):
-        _from_pipeline_key("qwen3_tts", cli_overrides=cli_overrides)
+def test_from_pipeline_config_forwards_cpu_offload_engine_args(cli_overrides):
+    from vllm_omni.engine.stage_init_utils import _project_omni_stage_engine_args
+
+    stage = _from_pipeline_key("qwen3_tts", cli_overrides=cli_overrides).stage_by_id(0)
+
+    assert stage.cache_config.cpu_offload_gb == 4
+    assert stage.cache_config.offload_backend == "uva"
+    engine_args = _project_omni_stage_engine_args(stage)
+    assert engine_args["cpu_offload_gb"] == 4
+    assert engine_args["offload_backend"] == "uva"
 
 
 def test_from_pipeline_config_accepts_frontend_consumed_reasoning_parser():
@@ -539,19 +546,30 @@ def test_from_pipeline_config_accepts_frontend_consumed_reasoning_parser():
     assert omni_config.stage_by_id(0) is not None
 
 
-@pytest.mark.parametrize(
-    ("engine_extras", "unowned_field"),
-    [
-        ({"cpu_offload_gb": 4}, "cpu_offload_gb"),
-        ({"parallel_config": {"cfg_parallel_size": 2}}, "parallel_config.cfg_parallel_size"),
-    ],
-    ids=["top-level", "nested-parallel-config"],
-)
-def test_from_pipeline_config_rejects_unowned_deploy_engine_extras(engine_extras, unowned_field):
+def test_from_pipeline_config_accepts_cpu_offload_deploy_engine_extras():
     pipeline = _resolve_pipeline_or_skip("qwen3_tts")
-    deploy = DeployConfig(stages=[StageDeployConfig(stage_id=0, engine_extras=engine_extras)])
+    deploy = DeployConfig(
+        stages=[
+            StageDeployConfig(
+                stage_id=0,
+                engine_extras={"cpu_offload_gb": 9, "offload_backend": "uva"},
+            )
+        ]
+    )
 
-    with pytest.raises(ValueError, match=rf"no structured config owner: {unowned_field}"):
+    cache = VllmOmniConfig.from_pipeline_config(pipeline, user_deploy_config=deploy).stage_by_id(0).cache_config
+
+    assert cache.cpu_offload_gb == 9
+    assert cache.offload_backend == "uva"
+
+
+def test_from_pipeline_config_rejects_unowned_cfg_parallel_size():
+    pipeline = _resolve_pipeline_or_skip("qwen3_tts")
+    deploy = DeployConfig(
+        stages=[StageDeployConfig(stage_id=0, engine_extras={"parallel_config": {"cfg_parallel_size": 2}})]
+    )
+
+    with pytest.raises(ValueError, match=r"no structured config owner: parallel_config.cfg_parallel_size"):
         VllmOmniConfig.from_pipeline_config(pipeline, user_deploy_config=deploy)
 
 
@@ -1517,6 +1535,8 @@ def test_sub_config_fields_match_structured_scopes():
         "disable_hybrid_kv_cache_manager",
         "mm_processor_cache_gb",
         "mamba_ssm_cache_dtype",
+        "cpu_offload_gb",
+        "offload_backend",
     }
     assert issubclass(OmniStageSchedulerConfig, VllmSchedulerConfig)
     assert {f.name for f in fields(OmniStageSchedulerConfig)} == {f.name for f in fields(VllmSchedulerConfig)} | {
